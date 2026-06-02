@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # JWT
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60
+    JWT_EXPIRE_MINUTES: int = 1440  # 24 小时
 
     # LLM API（后续实现）
     DASH_SCOPE_API_KEY: str = ""
