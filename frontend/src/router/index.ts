@@ -21,6 +21,12 @@ const router = createRouter({
       component: () => import('@/views/RegisterView.vue'),
       meta: { title: '注册' },
     },
+    {
+      path: '/chat',
+      name: 'chat',
+      component: () => import('@/views/ChatView.vue'),
+      meta: { title: '聊天' },
+    },
   ],
 })
 

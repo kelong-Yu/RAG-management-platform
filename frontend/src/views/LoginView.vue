@@ -1,4 +1,47 @@
 <script setup lang="ts">
+import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { useUserStore } from '@/stores/user'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+const formRef = ref<FormInstance>()
+
+const form = reactive({
+  username: '',
+  password: '',
+})
+
+const rules: FormRules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+  ],
+}
+
+const loading = ref(false)
+
+const handleLogin = async () => {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+
+  loading.value = true
+  try {
+    await userStore.login(form.username, form.password)
+    ElMessage.success('登录成功')
+    router.push('/chat')
+  } catch (err: unknown) {
+    const detail =
+      (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    ElMessage.error(detail || '登录失败，请稍后重试')
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -8,48 +51,49 @@
         用户登录
       </h2>
 
-      <form class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            用户名
-          </label>
-          <input
-            type="text"
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        @submit.prevent="handleLogin"
+      >
+        <el-form-item label="用户名" prop="username">
+          <el-input
+            v-model="form.username"
             placeholder="请输入用户名"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                   bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
-                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                   placeholder-gray-400 dark:placeholder-gray-500"
           />
-        </div>
+        </el-form-item>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            密码
-          </label>
-          <input
+        <el-form-item label="密码" prop="password">
+          <el-input
+            v-model="form.password"
             type="password"
             placeholder="请输入密码"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg
-                   bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
-                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                   placeholder-gray-400 dark:placeholder-gray-500"
+            show-password
           />
-        </div>
+        </el-form-item>
 
-        <button
-          type="submit"
-          class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium
-                 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2
-                 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          登录
-        </button>
-      </form>
+        <el-form-item>
+          <el-button
+            type="primary"
+            class="w-full"
+            :loading="loading"
+            @click="handleLogin"
+          >
+            登录
+          </el-button>
+        </el-form-item>
+      </el-form>
 
       <p class="text-sm text-center text-gray-500 dark:text-gray-400">
         还没有账号？
-        <a href="#" class="text-blue-600 hover:text-blue-500">立即注册</a>
+        <router-link
+          to="/register"
+          class="text-blue-600 hover:text-blue-500"
+        >
+          立即注册
+        </router-link>
       </p>
     </div>
   </div>
