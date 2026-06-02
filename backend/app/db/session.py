@@ -1,5 +1,5 @@
 """
-数据库会话 — SQLAlchemy engine & session 工厂（后续实现）。
+数据库会话 — SQLAlchemy 2.0 engine & session 工厂。
 """
 
 from sqlalchemy import create_engine
@@ -13,7 +13,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
-    """ORM 模型基类"""
+    """ORM 模型基类 — 所有模型继承此类。"""
     pass
 
 
