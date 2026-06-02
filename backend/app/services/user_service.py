@@ -5,9 +5,9 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import TokenResponse, UserCreate, UserLogin, UserResponse
 
 
 def register_user(db: Session, payload: UserCreate) -> UserResponse:
@@ -57,3 +57,34 @@ def register_user(db: Session, payload: UserCreate) -> UserResponse:
     db.refresh(user)
 
     return UserResponse.model_validate(user)
+
+
+def authenticate_user(db: Session, payload: UserLogin) -> TokenResponse:
+    """用户登录认证。
+
+    逻辑：
+    1. 根据用户名查询用户
+    2. 校验密码
+    3. 生成 JWT
+    4. 返回 token
+    """
+    # 1. 查询用户
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+        )
+
+    # 2. 校验密码
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+        )
+
+    # 3. 生成 JWT
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    # 4. 返回 token
+    return TokenResponse(access_token=access_token)

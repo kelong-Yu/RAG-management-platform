@@ -17,6 +17,18 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserLogin(BaseModel):
+    """登录请求"""
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """JWT 令牌响应"""
+    access_token: str
+    token_type: str = "bearer"
+
+
 class UserResponse(UserBase):
     """对外响应（不含密码）"""
     id: int
