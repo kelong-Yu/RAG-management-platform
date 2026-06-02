@@ -17,6 +17,7 @@
 * SQLAlchemy
 * JWT
 * uv
+* langchain
 
 ## Rules
 
@@ -27,6 +28,7 @@
 * 不允许any
 * 不允许在 Router 中编写业务逻辑
 * Service 层负责业务逻辑
+* App.vue是根组件只包裹router-view 或核心视图
 
 ## Git Rules
 
