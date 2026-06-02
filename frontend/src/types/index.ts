@@ -17,6 +17,13 @@ export interface ApiResponse<T = unknown> {
   data: T
 }
 
+/** 注册请求 */
+export interface RegisterRequest {
+  username: string
+  email: string
+  password: string
+}
+
 /** 登录请求 */
 export interface LoginRequest {
   username: string
