@@ -88,3 +88,25 @@ def authenticate_user(db: Session, payload: UserLogin) -> TokenResponse:
 
     # 4. 返回 token
     return TokenResponse(access_token=access_token)
+
+
+def get_user_by_id(db: Session, user_id: int) -> UserResponse:
+    """根据 ID 查询当前用户。
+
+    Args:
+        db: 数据库会话。
+        user_id: 用户 ID（来自 JWT）。
+
+    Returns:
+        UserResponse 用户信息。
+
+    Raises:
+        HTTPException 404: 用户不存在。
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在",
+        )
+    return UserResponse.model_validate(user)
