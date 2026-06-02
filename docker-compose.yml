@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: ai_postgres_db  # 加上别名，方便管理
+    restart: always                 # 崩溃或重启时自动运行
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: aichat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data # 把数据挂载到本地，防止丢失
+
+volumes:
+  pg_data: # 声明上面用到的数据卷名称
