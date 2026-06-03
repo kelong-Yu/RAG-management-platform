@@ -10,14 +10,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 
-# 确保所有模型在 create_all 前被导入
+# 确保所有模型被导入，供 Alembic 和 create_all 发现
 import app.models  # noqa: F401
 from app.db.session import Base, engine
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期 — 启动时自动建表。"""
+    """应用生命周期。
+
+    注意：正式表结构变更请使用 Alembic 迁移：
+        cd backend && uv run alembic revision --autogenerate -m "描述"
+        uv run alembic upgrade head
+
+    create_all 仅作为开发阶段安全兜底，后续版本将移除。
+    """
     Base.metadata.create_all(bind=engine)
     yield
 

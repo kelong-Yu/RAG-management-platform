@@ -7,7 +7,12 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 # .env 位于 app/.env（相对于本项目结构）
-ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+# config.py -> app/core/config.py, so .parent.parent = app/
+APP_DIR = Path(__file__).resolve().parent.parent
+ENV_PATH = APP_DIR / ".env"
+
+# 项目根目录（backend/），即 app/ 的父目录
+PROJECT_ROOT = APP_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -15,13 +20,28 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Chat"
     DEBUG: bool = True
 
-    # 数据库
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/ai_chat"
+    # 数据库（默认值与 docker-compose.yml 保持一致）
+    DATABASE_URL: str = "postgresql://admin:admin@localhost:5432/aichat"
 
     # JWT
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440  # 24 小时
+
+    # ============================================================
+    # 上传配置
+    # ============================================================
+    UPLOAD_DIR: str = str(PROJECT_ROOT / "uploads")
+    MAX_UPLOAD_SIZE_MB: int = 20
+    ALLOWED_IMAGE_MIME_TYPES: list[str] = [
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+    ]
+    ALLOWED_DOCUMENT_MIME_TYPES: list[str] = [
+        "application/pdf",
+    ]
 
     # LLM API（后续实现）
     DASH_SCOPE_API_KEY: str = ""

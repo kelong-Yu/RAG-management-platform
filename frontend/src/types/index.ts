@@ -77,3 +77,72 @@ export interface ChatResponse {
   answer: string
   conversation_id: number
 }
+
+// ============================================================
+// 上传 & 附件
+// ============================================================
+
+/** 上传状态枚举 */
+export type UploadStatus = 'idle' | 'uploading' | 'success' | 'error'
+
+/** 附件来源类型 */
+export type AttachmentSourceType = 'upload' | 'chat' | 'import'
+
+/** 附件处理状态 */
+export type AttachmentStatus = 'uploaded' | 'processing' | 'ready' | 'failed'
+
+/** 附件 */
+export interface Attachment {
+  id: number
+  user_id: number
+  file_name: string
+  stored_name: string
+  file_path: string
+  mime_type: string
+  file_size: number
+  source_type: AttachmentSourceType
+  status: AttachmentStatus
+  created_at: string
+}
+
+/** 附件列表 */
+export interface AttachmentListResponse {
+  items: Attachment[]
+  total: number
+}
+
+/** 上传进度/状态（前端使用） */
+export interface UploadState {
+  file_id: number | null
+  status: UploadStatus
+  error_message: string | null
+}
+
+// ============================================================
+// 知识库 & 文档
+// ============================================================
+
+/** 文档类型 */
+export type DocumentType = 'pdf' | 'txt' | 'html'
+
+/** 文档处理状态 */
+export type DocumentStatus = 'uploaded' | 'parsing' | 'chunking' | 'ready' | 'failed'
+
+/** 文档 */
+export interface Document {
+  id: number
+  user_id: number
+  attachment_id: number | null
+  name: string
+  doc_type: DocumentType
+  status: DocumentStatus
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** 文档列表 */
+export interface DocumentListResponse {
+  items: Document[]
+  total: number
+}
