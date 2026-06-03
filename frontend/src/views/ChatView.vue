@@ -12,6 +12,11 @@ interface ChatMessage {
   timestamp: number
 }
 
+interface SSEParseResult {
+  events: string[]
+  remainder: string
+}
+
 // ---- 状态 ----
 
 const messages = ref<ChatMessage[]>([])
@@ -28,6 +33,35 @@ function scrollToBottom() {
       messageArea.value.scrollTop = messageArea.value.scrollHeight
     }
   })
+}
+
+function consumeSSEBuffer(buffer: string, flush = false): SSEParseResult {
+  const normalized = buffer.replace(/\r\n/g, '\n')
+  const parts = normalized.split('\n\n')
+  const remainder = flush ? '' : (parts.pop() ?? '')
+  const frames = flush ? parts : parts
+  const events: string[] = []
+
+  if (flush && remainder) {
+    frames.push(remainder)
+  }
+
+  for (const frame of frames) {
+    const trimmedFrame = frame.trim()
+    if (!trimmedFrame) continue
+
+    const dataLines = trimmedFrame
+      .split('\n')
+      .filter((line) => line && !line.startsWith(':'))
+      .map((line) => line.match(/^data:\s?(.*)$/)?.[1] ?? null)
+      .filter((line): line is string => line !== null && line.length > 0)
+
+    if (dataLines.length > 0) {
+      events.push(dataLines.join('\n'))
+    }
+  }
+
+  return { events, remainder }
 }
 
 async function sendMessage() {
@@ -54,6 +88,7 @@ async function sendMessage() {
       `${baseURL}/chat/stream?message=${encodeURIComponent(text)}`,
       {
         headers: {
+          Accept: 'text/event-stream',
           Authorization: `Bearer ${token}`,
         },
       },
@@ -69,7 +104,22 @@ async function sendMessage() {
 
     const decoder = new TextDecoder()
     let buffer = ''
-    let assistantMsg: ChatMessage | null = null
+    let assistantMsgIndex: number | null = null
+
+    const appendAssistantMessage = (content: string) => {
+      if (assistantMsgIndex === null) {
+        messages.value.push({
+          id: nextId++,
+          role: 'assistant',
+          content,
+          timestamp: Date.now(),
+        })
+        assistantMsgIndex = messages.value.length - 1
+        loading.value = false
+      } else {
+        messages.value[assistantMsgIndex].content += content
+      }
+    }
 
     // 逐帧读取 SSE 流
     while (true) {
@@ -77,37 +127,24 @@ async function sendMessage() {
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
+      const { events, remainder } = consumeSSEBuffer(buffer)
+      buffer = remainder
 
-      // SSE 帧以 \n\n 分隔
-      const parts = buffer.split('\n\n')
-      buffer = parts.pop() || ''
-
-      for (const part of parts) {
-        const lines = part.split('\n')
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const token = line.slice(6)
-            if (!assistantMsg) {
-              // 首个 Token：创建助手消息并隐藏加载动画
-              assistantMsg = {
-                id: nextId++,
-                role: 'assistant',
-                content: token,
-                timestamp: Date.now(),
-              }
-              messages.value.push(assistantMsg)
-              loading.value = false
-            } else {
-              assistantMsg.content += token
-            }
-          }
-        }
+      for (const event of events) {
+        appendAssistantMessage(event)
       }
       scrollToBottom()
     }
 
+    buffer += decoder.decode()
+    const { events: finalEvents } = consumeSSEBuffer(buffer, true)
+
+    for (const event of finalEvents) {
+      appendAssistantMessage(event)
+    }
+
     // 流中没有收到任何数据
-    if (!assistantMsg) {
+    if (assistantMsgIndex === null) {
       messages.value.push({
         id: nextId++,
         role: 'assistant',
