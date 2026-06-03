@@ -1,48 +1,121 @@
 """
-聊天接口 — POST /api/chat, GET /api/chat/stream
+聊天接口 — 消息发送、SSE 流式、会话管理。
 """
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import get_current_user_id
-from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.chat_service import chat as chat_service
-from app.services.chat_service import chat_stream as chat_stream_service
+from app.db.session import get_db
+from app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ConversationCreate,
+    ConversationResponse,
+    MessageResponse,
+)
+from app.services.chat_service import send_message, send_message_stream
+from app.services.conversation_service import (
+    create_conversation,
+    delete_conversation,
+    get_messages,
+    list_conversations,
+    update_conversation_title,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+# ============================================================
+# 消息发送
+# ============================================================
+
+
 @router.post("/", response_model=ChatResponse)
-async def send_message(
+async def chat_send(
     body: ChatRequest,
     user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
-    """发送聊天消息，返回 AI 回复。
+    """非流式发送聊天消息，返回 AI 回复。
 
-    需要 JWT 认证（Authorization: Bearer <token>）。
+    首次对话不传 conversation_id，后端自动创建新会话。
     """
-    answer = await chat_service(body.message)
-    return ChatResponse(answer=answer)
+    answer, conv_id = await send_message(
+        db, user_id, body.message, body.conversation_id
+    )
+    return ChatResponse(answer=answer, conversation_id=conv_id)
 
 
 @router.get("/stream")
-async def send_message_stream(
+async def chat_stream(
     message: str = Query(..., description="用户输入的消息"),
+    conversation_id: int | None = Query(None, description="会话 ID，不传则自动创建"),
     user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
-    """发送聊天消息，通过 SSE 流式返回 AI 回复。
+    """流式发送聊天消息（SSE），逐 Token 返回。
 
-    需要 JWT 认证（Authorization: Bearer <token>）。
-    返回格式：data: <token>
+    返回格式：``data: <token>``，末尾发送 ``data: __CONV_ID__:<id>`` 告知前端会话 ID。
     兼容浏览器 EventSource API。
     """
 
     async def event_generator():
         try:
-            async for token in chat_stream_service(message):
+            async for token in send_message_stream(
+                db, user_id, message, conversation_id
+            ):
                 yield {"data": token}
         except Exception as e:
             yield {"data": f"[错误] {str(e)}"}
 
     return EventSourceResponse(event_generator())
+
+
+# ============================================================
+# 会话管理
+# ============================================================
+
+
+@router.get("/conversations", response_model=list[ConversationResponse])
+async def chat_conversations(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """获取当前用户的会话列表，按更新时间倒序。"""
+    return list_conversations(db, user_id)
+
+
+@router.post("/conversations", response_model=ConversationResponse)
+async def chat_create_conversation(
+    body: ConversationCreate | None = None,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """创建新会话。"""
+    return create_conversation(db, user_id, body.title if body else None)
+
+
+@router.delete("/conversations/{conversation_id}")
+async def chat_delete_conversation(
+    conversation_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """删除会话及其所有消息。"""
+    delete_conversation(db, conversation_id, user_id)
+    return {"message": "deleted"}
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=list[MessageResponse],
+)
+async def chat_messages(
+    conversation_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """获取指定会话的历史消息。"""
+    return get_messages(db, conversation_id, user_id)

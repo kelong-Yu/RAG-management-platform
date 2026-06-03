@@ -50,10 +50,30 @@ export interface PaginatedData<T> {
   page_size: number
 }
 
+/** 会话 */
+export interface Conversation {
+  id: number
+  title: string
+  created_at: string
+  updated_at: string
+}
+
 /** 聊天消息 */
 export interface ChatMessage {
   id: number
   role: 'user' | 'assistant'
   content: string
   created_at: string
+}
+
+/** 聊天请求 */
+export interface ChatRequest {
+  message: string
+  conversation_id?: number
+}
+
+/** 聊天响应 */
+export interface ChatResponse {
+  answer: string
+  conversation_id: number
 }
