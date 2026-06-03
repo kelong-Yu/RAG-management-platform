@@ -2,6 +2,8 @@
 LLM 服务 — 基于 LangChain ChatOpenAI 的 DeepSeek 对话接口。
 """
 
+from collections.abc import AsyncGenerator
+
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
@@ -13,9 +15,6 @@ _llm = ChatOpenAI(
     api_key=settings.DEEPSEEK_API_KEY,
     base_url=settings.DEEPSEEK_API_BASE,
 )
-
-
-from collections.abc import AsyncGenerator
 
 
 async def chat(message: str) -> str:

@@ -39,7 +39,10 @@ async def send_message_stream(
     """
 
     async def event_generator():
-        async for token in chat_stream_service(message):
-            yield {"data": token}
+        try:
+            async for token in chat_stream_service(message):
+                yield {"data": token}
+        except Exception as e:
+            yield {"data": f"[错误] {str(e)}"}
 
     return EventSourceResponse(event_generator())

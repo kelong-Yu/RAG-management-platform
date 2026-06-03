@@ -17,7 +17,7 @@ export const useUserStore = defineStore('user', () => {
     isAuthenticated.value = true
   }
 
-  /** 退出登录 */
+  /** 退出登录 — 清空用户状态 & 移除 token */
   const logout = () => {
     user.value = null
     isAuthenticated.value = false
@@ -33,8 +33,14 @@ export const useUserStore = defineStore('user', () => {
   const login = async (username: string, password: string) => {
     const res = await loginApi({ username, password })
     setToken(res.data.access_token)
-    const userRes = await getMeApi()
-    setUser(userRes.data)
+    try {
+      const userRes = await getMeApi()
+      setUser(userRes.data)
+    } catch {
+      // token 已保存但获取用户信息失败，回滚登录态
+      logout()
+      throw new Error('获取用户信息失败')
+    }
   }
 
   /** 从服务端刷新当前用户信息（用于页面刷新恢复登录态） */
@@ -43,7 +49,9 @@ export const useUserStore = defineStore('user', () => {
       const res = await getMeApi()
       setUser(res.data)
     } catch {
+      // 401 时响应拦截器已调用 logout()，此处的 logout() 覆盖非 401 异常
       logout()
+      throw new Error('获取用户信息失败')
     }
   }
 

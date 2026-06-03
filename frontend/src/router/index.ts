@@ -8,19 +8,19 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
-      meta: { title: '首页' },
+      meta: { title: '首页', requiresAuth: true },
     },
     {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-      meta: { title: '登录' },
+      meta: { title: '登录', guest: true },
     },
     {
       path: '/register',
       name: 'register',
       component: () => import('@/views/RegisterView.vue'),
-      meta: { title: '注册' },
+      meta: { title: '注册', guest: true },
     },
     {
       path: '/chat',
@@ -31,13 +31,20 @@ const router = createRouter({
   ],
 })
 
-// 全局前置守卫 — 标题设置 & 认证校验
 router.beforeEach((to, _from, next) => {
   document.title = `${to.meta.title || 'AI Chat'}`
 
-  // 需要登录的页面，未登录则跳转 /login
-  if (to.meta.requiresAuth && !getToken()) {
-    next({ name: 'login' })
+  const hasToken = !!getToken()
+
+  // 需要登录的页面 → 未登录则跳转 /login
+  if (to.meta.requiresAuth && !hasToken) {
+    next({ name: 'login', query: { redirect: to.fullPath } })
+    return
+  }
+
+  // 游客页面（/login、/register）→ 已登录则跳转 /chat
+  if (to.meta.guest && hasToken) {
+    next({ name: 'chat' })
     return
   }
 

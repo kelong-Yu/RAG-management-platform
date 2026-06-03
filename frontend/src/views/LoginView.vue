@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
@@ -33,7 +34,9 @@ const handleLogin = async () => {
   try {
     await userStore.login(form.username, form.password)
     ElMessage.success('登录成功')
-    router.push('/chat')
+    // 如果有 redirect 参数则跳回原页面，否则去 /chat
+    const redirect = route.query.redirect as string | undefined
+    router.push(redirect || '/chat')
   } catch (err: unknown) {
     const detail =
       (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail

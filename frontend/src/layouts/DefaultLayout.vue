@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+
+const router = useRouter()
+const userStore = useUserStore()
+
+function handleLogout() {
+  userStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -13,12 +23,31 @@
 
         <!-- 右侧操作 -->
         <div class="flex items-center gap-4">
-          <router-link
-            to="/login"
-            class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-          >
-            登录
-          </router-link>
+          <template v-if="userStore.isAuthenticated">
+            <span class="text-sm text-gray-600 dark:text-gray-300">
+              {{ userStore.user?.username }}
+            </span>
+            <router-link
+              to="/chat"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              聊天
+            </router-link>
+            <button
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
+              @click="handleLogout"
+            >
+              退出
+            </button>
+          </template>
+          <template v-else>
+            <router-link
+              to="/login"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              登录
+            </router-link>
+          </template>
         </div>
       </nav>
     </header>

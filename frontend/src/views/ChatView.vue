@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 
+import { getToken } from '@/utils'
+
 // ---- 类型 ----
 
 interface ChatMessage {
@@ -28,9 +30,9 @@ function scrollToBottom() {
   })
 }
 
-function sendMessage() {
+async function sendMessage() {
   const text = input.value.trim()
-  if (!text) return
+  if (!text || loading.value) return
 
   // 添加用户消息
   messages.value.push({
@@ -40,20 +42,91 @@ function sendMessage() {
     timestamp: Date.now(),
   })
   input.value = ''
+  loading.value = true
   scrollToBottom()
 
-  // 模拟 AI 回复
-  loading.value = true
-  setTimeout(() => {
+  // 构建请求 URL
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+  const token = getToken()
+
+  try {
+    const response = await fetch(
+      `${baseURL}/chat/stream?message=${encodeURIComponent(text)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    )
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(errorData?.detail || `请求失败 (${response.status})`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('无法读取响应流')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let assistantMsg: ChatMessage | null = null
+
+    // 逐帧读取 SSE 流
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // SSE 帧以 \n\n 分隔
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() || ''
+
+      for (const part of parts) {
+        const lines = part.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const token = line.slice(6)
+            if (!assistantMsg) {
+              // 首个 Token：创建助手消息并隐藏加载动画
+              assistantMsg = {
+                id: nextId++,
+                role: 'assistant',
+                content: token,
+                timestamp: Date.now(),
+              }
+              messages.value.push(assistantMsg)
+              loading.value = false
+            } else {
+              assistantMsg.content += token
+            }
+          }
+        }
+      }
+      scrollToBottom()
+    }
+
+    // 流中没有收到任何数据
+    if (!assistantMsg) {
+      messages.value.push({
+        id: nextId++,
+        role: 'assistant',
+        content: '模型未返回任何内容，请重试。',
+        timestamp: Date.now(),
+      })
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '请求失败，请重试。'
     messages.value.push({
       id: nextId++,
       role: 'assistant',
-      content: '这是一个模拟回复。后续将接入大模型 API 实现真正的对话。',
+      content: message,
       timestamp: Date.now(),
     })
+  } finally {
     loading.value = false
     scrollToBottom()
-  }, 800)
+  }
 }
 
 function formatTime(ts: number): string {
@@ -114,7 +187,7 @@ function formatTime(ts: number): string {
         </div>
       </template>
 
-      <!-- 加载指示器 -->
+      <!-- 加载指示器 — 等待首个 Token -->
       <div v-if="loading" class="flex justify-start">
         <div class="bg-gray-100 dark:bg-gray-700 px-4 py-3 rounded-2xl rounded-bl-md">
           <div class="flex items-center gap-1.5">
