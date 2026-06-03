@@ -15,6 +15,9 @@ _llm = ChatOpenAI(
 )
 
 
+from collections.abc import AsyncGenerator
+
+
 async def chat(message: str) -> str:
     """发送消息给 DeepSeek，返回模型回复文本。
 
@@ -26,3 +29,17 @@ async def chat(message: str) -> str:
     """
     response = await _llm.ainvoke([HumanMessage(content=message)])
     return response.content
+
+
+async def chat_stream(message: str) -> AsyncGenerator[str, None]:
+    """流式发送消息给 DeepSeek，逐 Token 返回回复内容。
+
+    Args:
+        message: 用户输入的文本。
+
+    Yields:
+        模型生成的每个文本 Token。
+    """
+    async for chunk in _llm.astream([HumanMessage(content=message)]):
+        if chunk.content:
+            yield chunk.content
