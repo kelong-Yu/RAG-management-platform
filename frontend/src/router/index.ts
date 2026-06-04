@@ -28,6 +28,12 @@ const router = createRouter({
       component: () => import('@/views/ChatView.vue'),
       meta: { title: '聊天', requiresAuth: true },
     },
+    {
+      path: '/files',
+      name: 'files',
+      component: () => import('@/views/FilesView.vue'),
+      meta: { title: '文件管理', requiresAuth: true },
+    },
   ],
 })
 

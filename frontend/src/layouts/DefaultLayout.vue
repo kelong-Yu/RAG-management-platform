@@ -33,6 +33,12 @@ function handleLogout() {
             >
               聊天
             </router-link>
+            <router-link
+              to="/files"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              文件
+            </router-link>
             <button
               class="text-sm text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
               @click="handleLogout"
