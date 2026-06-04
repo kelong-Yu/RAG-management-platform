@@ -7,6 +7,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
+# ── Document ──────────────────────────────────────────────────────────
+
+
 class DocumentResponse(BaseModel):
     """文档对外响应。"""
 
@@ -28,3 +31,46 @@ class DocumentListResponse(BaseModel):
 
     items: list[DocumentResponse]
     total: int
+
+
+class DocumentCreateRequest(BaseModel):
+    """从已有附件创建文档的请求。"""
+
+    attachment_id: int
+
+
+class DocumentProcessRequest(BaseModel):
+    """触发/重试文档处理的请求（当前无需额外参数）。"""
+    pass
+
+
+# ── DocumentChunk ─────────────────────────────────────────────────────
+
+
+class DocumentChunkResponse(BaseModel):
+    """切片对外响应。"""
+
+    id: int
+    document_id: int
+    chunk_index: int
+    page_number: int | None
+    content: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentChunkListResponse(BaseModel):
+    """切片列表响应。"""
+
+    items: list[DocumentChunkResponse]
+    total: int
+
+
+# ── 文档详情（含切片数量摘要）─────────────────────────────────────────
+
+
+class DocumentDetailResponse(DocumentResponse):
+    """文档详情（比列表多一个切片数量统计）。"""
+
+    chunk_count: int

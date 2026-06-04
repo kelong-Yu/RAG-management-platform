@@ -146,3 +146,29 @@ export interface DocumentListResponse {
   items: Document[]
   total: number
 }
+
+/** 文档切片 */
+export interface DocumentChunk {
+  id: number
+  document_id: number
+  chunk_index: number
+  page_number: number | null
+  content: string
+  created_at: string
+}
+
+/** 切片列表 */
+export interface DocumentChunkListResponse {
+  items: DocumentChunk[]
+  total: number
+}
+
+/** 文档详情（含切片数量） */
+export interface DocumentDetail extends Document {
+  chunk_count: number
+}
+
+/** 创建文档请求 */
+export interface CreateDocumentRequest {
+  attachment_id: number
+}

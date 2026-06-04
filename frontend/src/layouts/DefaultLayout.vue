@@ -39,6 +39,12 @@ function handleLogout() {
             >
               文件
             </router-link>
+            <router-link
+              to="/knowledge"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              知识库
+            </router-link>
             <button
               class="text-sm text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
               @click="handleLogout"

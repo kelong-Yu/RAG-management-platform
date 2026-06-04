@@ -34,6 +34,12 @@ const router = createRouter({
       component: () => import('@/views/FilesView.vue'),
       meta: { title: '文件管理', requiresAuth: true },
     },
+    {
+      path: '/knowledge',
+      name: 'knowledge',
+      component: () => import('@/views/KnowledgeView.vue'),
+      meta: { title: '知识库', requiresAuth: true },
+    },
   ],
 })
 
