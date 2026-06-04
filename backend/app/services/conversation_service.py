@@ -86,13 +86,22 @@ def delete_conversation(db: Session, conversation_id: int, user_id: int) -> None
 
 
 def save_message(
-    db: Session, conversation_id: int, role: str, content: str
+    db: Session,
+    conversation_id: int,
+    role: str,
+    content: str,
+    extra_data: dict | None = None,
 ) -> MessageResponse:
-    """保存一条消息到数据库。"""
+    """保存一条消息到数据库。
+
+    Args:
+        extra_data: 扩展元数据，如 {"attachment_ids": [1, 2]}
+    """
     message = Message(
         conversation_id=conversation_id,
         role=role,
         content=content,
+        extra_data=extra_data,
     )
     db.add(message)
     db.commit()

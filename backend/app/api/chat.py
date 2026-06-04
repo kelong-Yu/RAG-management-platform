@@ -44,18 +44,21 @@ async def chat_send(
 
     首次对话不传 conversation_id，后端自动创建新会话。
     设置 use_rag=true 启用知识库检索增强。
+    传入 attachment_ids 可关联已上传的图片附件。
     """
-    answer, conv_id, citations = await send_message(
+    answer, conv_id, citations, image_meta = await send_message(
         db,
         user_id,
         body.message,
         body.conversation_id,
         use_rag=body.use_rag,
+        attachment_ids=body.attachment_ids,
     )
     return ChatResponse(
         answer=answer,
         conversation_id=conv_id,
         citations=[CitationSchema(**c) for c in citations],
+        attachment_ids=[img["attachment_id"] for img in image_meta],
     )
 
 
@@ -64,6 +67,7 @@ async def chat_stream(
     message: str = Query(..., description="用户输入的消息"),
     conversation_id: int | None = Query(None, description="会话 ID，不传则自动创建"),
     use_rag: bool = Query(False, description="是否启用知识库检索增强"),
+    attachment_ids: list[int] = Query([], description="关联的图片附件 ID 列表"),
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -71,6 +75,7 @@ async def chat_stream(
 
     返回格式：``data: <token>``。
     末尾发送：
+    - ``data: __IMAGES__:<json>`` 包含图片附件元数据
     - ``data: __CITATIONS__:<json>`` 包含知识库引用
     - ``data: __CONV_ID__:<id>`` 告知前端会话 ID。
     兼容浏览器 EventSource API。
@@ -79,7 +84,12 @@ async def chat_stream(
     async def event_generator():
         try:
             async for token in send_message_stream(
-                db, user_id, message, conversation_id, use_rag=use_rag
+                db,
+                user_id,
+                message,
+                conversation_id,
+                use_rag=use_rag,
+                attachment_ids=attachment_ids,
             ):
                 yield {"data": token}
         except Exception as e:

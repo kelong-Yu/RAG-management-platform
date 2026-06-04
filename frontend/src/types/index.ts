@@ -63,6 +63,7 @@ export interface ChatMessage {
   id: number
   role: 'user' | 'assistant'
   content: string
+  extra_data?: Record<string, unknown> | null
   created_at: string
 }
 
@@ -71,6 +72,7 @@ export interface ChatRequest {
   message: string
   conversation_id?: number
   use_rag?: boolean
+  attachment_ids?: number[]
 }
 
 /** 聊天响应 */
@@ -78,6 +80,7 @@ export interface ChatResponse {
   answer: string
   conversation_id: number
   citations: Citation[]
+  attachment_ids: number[]
 }
 
 /** 引用来源 */
@@ -87,6 +90,15 @@ export interface Citation {
   chunk_index: number
   content_snippet: string
   similarity: number
+}
+
+/** 图片附件元数据（来自 SSE __IMAGES__ 事件或 API 响应） */
+export interface ImageMeta {
+  attachment_id: number
+  file_name: string
+  mime_type: string
+  file_size: number
+  is_image: boolean
 }
 
 // ============================================================

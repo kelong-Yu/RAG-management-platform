@@ -1,12 +1,13 @@
 """
-聊天服务 — 编排用户消息到 LLM 的完整流程，含会话持久化和 RAG。
+聊天服务 — 编排用户消息到 LLM 的完整流程，含会话持久化、RAG、图片附件。
 """
 
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 
 from sqlalchemy.orm import Session
 
+from app.models.attachment import Attachment
 from app.services.conversation_service import (
     build_context_messages,
     create_conversation,
@@ -15,8 +16,11 @@ from app.services.conversation_service import (
     set_conversation_title_from_first_message,
 )
 from app.services.llm_service import (
-    chat_with_context,
     chat_stream_with_context,
+    chat_stream_with_multimodal_context,
+    chat_with_context,
+    chat_with_multimodal_context,
+    is_vision_capable,
 )
 
 # RAG 增强的 system prompt 前缀
@@ -39,13 +43,16 @@ async def send_message(
     message: str,
     conversation_id: int | None = None,
     use_rag: bool = False,
-) -> tuple[str, int, list[dict]]:
+    attachment_ids: Sequence[int] = (),
+) -> tuple[str, int, list[dict], list[dict]]:
     """非流式发送消息。
 
     Returns:
-        (answer, conversation_id, citations)
+        (answer, conversation_id, citations, image_meta)
+        - image_meta: 图片附件元数据，用于前端展示
     """
     citations: list[dict] = []
+    image_meta: list[dict] = []
 
     # 1. 获取或创建会话
     if conversation_id:
@@ -57,29 +64,37 @@ async def send_message(
         conv_id = conv.id
         is_new = True
 
-    # 2. 保存用户消息
-    save_message(db, conv_id, "user", message)
+    # 2. 校验图片附件归属
+    image_paths, image_meta = await _validate_and_collect_images(
+        db, user_id, attachment_ids
+    )
 
-    # 3. 新会话自动生成标题
+    # 3. 保存用户消息
+    extra = {"attachment_ids": list(attachment_ids)} if attachment_ids else None
+    save_message(db, conv_id, "user", message, extra_data=extra)
+
+    # 4. 新会话自动生成标题
     if is_new:
         set_conversation_title_from_first_message(db, conv_id)
 
-    # 4. 构建 LLM 上下文（含 RAG 增强）
+    # 5. 构建 LLM 上下文（含 RAG 增强）
     history = build_context_messages(db, conv_id, user_id)
 
     if use_rag:
         citations, rag_prefix = await _build_rag_prompt(message, user_id, db)
         if rag_prefix:
-            # 将 RAG 上下文插入为 system message
             history.insert(0, {"role": "system", "content": rag_prefix})
 
-    # 5. 调用 LLM
-    answer = await chat_with_context(history)
+    # 6. 调用 LLM（视觉 vs 纯文本）
+    if is_vision_capable() and image_paths:
+        answer = await chat_with_multimodal_context(history, image_paths)
+    else:
+        answer = await chat_with_context(history)
 
-    # 6. 保存助手消息
+    # 7. 保存助手消息
     save_message(db, conv_id, "assistant", answer)
 
-    return answer, conv_id, citations
+    return answer, conv_id, citations, image_meta
 
 
 async def send_message_stream(
@@ -88,11 +103,13 @@ async def send_message_stream(
     message: str,
     conversation_id: int | None = None,
     use_rag: bool = False,
+    attachment_ids: Sequence[int] = (),
 ) -> AsyncGenerator[str, None]:
     """流式发送消息，逐 Token 返回。
 
     Yields:
         每个文本 Token。完成时 yield 特殊标记：
+        - ``__IMAGES__:<json>`` 包含图片附件元数据（文件名、MIME 等）
         - ``__CITATIONS__:<json>`` 包含引用数据
         - ``__CONV_ID__:{id}`` 包含会话 ID
     """
@@ -106,14 +123,20 @@ async def send_message_stream(
         conv_id = conv.id
         is_new = True
 
-    # 2. 保存用户消息
-    save_message(db, conv_id, "user", message)
+    # 2. 校验图片附件归属
+    image_paths, image_meta = await _validate_and_collect_images(
+        db, user_id, attachment_ids
+    )
 
-    # 3. 新会话自动生成标题
+    # 3. 保存用户消息（含 attachment_ids 元数据）
+    extra = {"attachment_ids": list(attachment_ids)} if attachment_ids else None
+    save_message(db, conv_id, "user", message, extra_data=extra)
+
+    # 4. 新会话自动生成标题
     if is_new:
         set_conversation_title_from_first_message(db, conv_id)
 
-    # 4. 构建 LLM 上下文（含 RAG 增强）
+    # 5. 构建 LLM 上下文（含 RAG 增强）
     history = build_context_messages(db, conv_id, user_id)
     citations: list[dict] = []
 
@@ -122,24 +145,91 @@ async def send_message_stream(
         if rag_prefix:
             history.insert(0, {"role": "system", "content": rag_prefix})
 
-    # 5. 流式调用 LLM，同时累积完整回复
+    # 6. 流式调用 LLM（视觉 vs 纯文本）
     full_answer = ""
-    async for token in chat_stream_with_context(history):
-        full_answer += token
-        yield token
+    if is_vision_capable() and image_paths:
+        async for token in chat_stream_with_multimodal_context(history, image_paths):
+            full_answer += token
+            yield token
+    else:
+        async for token in chat_stream_with_context(history):
+            full_answer += token
+            yield token
 
-    # 6. 流结束后保存助手消息
+    # 7. 流结束后保存助手消息
     assistant_message = save_message(db, conv_id, "assistant", full_answer)
 
-    # 7. 告知前端持久化后的 assistant message id，便于引用缓存复用
+    # 8. 告知前端持久化后的 assistant message id
     yield f"__ASSISTANT_ID__:{assistant_message.id}"
 
-    # 8. 发送引用数据
+    # 9. 发送图片元数据（前端用于渲染图片 + 降级提示）
+    if image_meta:
+        payload = {
+            "images": image_meta,
+            "vision_capable": is_vision_capable(),
+        }
+        yield f"__IMAGES__:{json.dumps(payload, ensure_ascii=False)}"
+
+    # 10. 发送引用数据
     if citations:
         yield f"__CITATIONS__:{json.dumps(citations, ensure_ascii=False)}"
 
-    # 9. 告知前端 conversation_id（新的或用已有的）
+    # 11. 告知前端 conversation_id
     yield f"__CONV_ID__:{conv_id}"
+
+
+# ── 图片附件辅助 ────────────────────────────────────────────────────────
+
+
+async def _validate_and_collect_images(
+    db: Session,
+    user_id: int,
+    attachment_ids: Sequence[int],
+) -> tuple[list[str], list[dict]]:
+    """校验图片附件归属并收集元数据。
+
+    Args:
+        db: 数据库会话
+        user_id: 当前用户 ID
+        attachment_ids: 前端传入的附件 ID 列表
+
+    Returns:
+        (image_paths, image_meta)
+        - image_paths: 本地文件路径列表（仅图片类型）
+        - image_meta: 图片元数据列表，用于前端渲染
+    """
+    if not attachment_ids:
+        return [], []
+
+    attachments = (
+        db.query(Attachment)
+        .filter(
+            Attachment.id.in_(list(attachment_ids)),
+            Attachment.user_id == user_id,
+        )
+        .all()
+    )
+
+    # 校验数量一致（防止越权访问不存在的附件）
+    if len(attachments) != len(set(attachment_ids)):
+        raise ValueError("部分附件不存在或无权访问")
+
+    image_paths: list[str] = []
+    image_meta: list[dict] = []
+
+    for att in sorted(attachments, key=lambda a: list(attachment_ids).index(a.id)):
+        is_image = att.mime_type and att.mime_type.startswith("image/")
+        image_meta.append({
+            "attachment_id": att.id,
+            "file_name": att.file_name,
+            "mime_type": att.mime_type,
+            "file_size": att.file_size,
+            "is_image": is_image,
+        })
+        if is_image:
+            image_paths.append(att.file_path)
+
+    return image_paths, image_meta
 
 
 # ── RAG 辅助 ───────────────────────────────────────────────────────────

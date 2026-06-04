@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox, ElTag } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Edit, Fold, Plus, Picture } from '@element-plus/icons-vue'
 
 import { getToken } from '@/utils'
 import { useChatStore } from '@/stores/chat'
-import type { ChatMessage, Citation } from '@/types'
+import { uploadFile } from '@/api/files'
+import type { ChatMessage, Citation, ImageMeta } from '@/types'
 
 const RAG_STORAGE_KEY = 'chat:useRag'
 const CITATIONS_STORAGE_KEY = 'chat:citations'
@@ -34,9 +36,49 @@ const messageCitations = ref<Record<number, Citation[]>>(
 )
 const renameDialogVisible = ref(false)
 const renameTitle = ref('')
+const renameConversationId = ref<number | null>(null)
+
+// ── 图片相关状态 ──
+const imageInputRef = ref<HTMLInputElement>()
+/** 待发送的图片列表 */
+const pendingImages = ref<
+  Array<{
+    file: File
+    previewUrl: string
+    uploading: boolean
+    attachmentId: number | null
+    error: string | null
+  }>
+>([])
+/** 消息关联的图片元数据，key 为消息 temp id */
+const messageImages = ref<Record<number, ImageMeta[]>>({})
+/** 图片 blob URL 缓存 keyed by attachment_id */
+const imageBlobCache = ref<Record<number, string>>({})
+/** 当前模型是否支持视觉（由 SSE __IMAGES__ 事件中的 vision_capable 字段决定） */
+const visionCapable = ref(false)
 
 const currentConversationTitle = computed(() =>
   chatStore.conversations.find(c => c.id === chatStore.currentConversationId)?.title || '新对话'
+)
+
+// 预加载消息关联的图片 blob URL
+watch(
+  messageImages,
+  async (imagesMap) => {
+    for (const images of Object.values(imagesMap)) {
+      for (const img of images) {
+        if (!imageBlobCache.value[img.attachment_id]) {
+          try {
+            await loadImageBlobUrl(img.attachment_id)
+          } catch {
+            // 加载失败，保留缓存以避免重复尝试
+            imageBlobCache.value[img.attachment_id] = ''
+          }
+        }
+      }
+    }
+  },
+  { deep: true },
 )
 
 // ---- 初始化 ----
@@ -97,6 +139,74 @@ function consumeSSEBuffer(buffer: string, flush = false): SSEParseResult {
   return { events, remainder }
 }
 
+// ── 图片辅助函数 ──
+
+function triggerImagePicker() {
+  imageInputRef.value?.click()
+}
+
+function handleImageFilesSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+
+  // MIME 白名单和大小检查 (20MB)
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  const maxSize = 20 * 1024 * 1024
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    if (!allowedTypes.includes(file.type)) {
+      ElMessage.warning(`不支持的文件类型: ${file.name}`)
+      continue
+    }
+    if (file.size > maxSize) {
+      ElMessage.warning(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB): ${file.name}`)
+      continue
+    }
+    pendingImages.value.push({
+      file,
+      previewUrl: URL.createObjectURL(file),
+      uploading: false,
+      attachmentId: null,
+      error: null,
+    })
+  }
+
+  // 重置 input，允许重复选同一文件
+  input.value = ''
+}
+
+function removePendingImage(index: number) {
+  const item = pendingImages.value[index]
+  if (item) {
+    URL.revokeObjectURL(item.previewUrl)
+    pendingImages.value.splice(index, 1)
+  }
+}
+
+async function loadImageBlobUrl(attachmentId: number): Promise<string> {
+  if (imageBlobCache.value[attachmentId]) {
+    return imageBlobCache.value[attachmentId]
+  }
+  const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+  const token = getToken()
+  const response = await fetch(`${baseURL}/files/${attachmentId}/raw`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    throw new Error(`图片加载失败 (${response.status})`)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  imageBlobCache.value[attachmentId] = url
+  return url
+}
+
+function getImageMeta(msgId: number): ImageMeta[] {
+  return messageImages.value[msgId] || []
+}
+
 // ---- 方法 ----
 
 function scrollToBottom() {
@@ -109,19 +219,59 @@ function scrollToBottom() {
 
 async function sendMessage() {
   const text = input.value.trim()
-  if (!text || streaming.value) return
+  const hasImages = pendingImages.value.length > 0
+  if ((!text && !hasImages) || streaming.value) return
 
   const conversationId = chatStore.currentConversationId
+
+  // 上传所有待发送图片
+  const attachmentIds: number[] = []
+  const uploadedImages: ImageMeta[] = []
+
+  if (hasImages) {
+    for (const item of pendingImages.value) {
+      item.uploading = true
+      try {
+        const res = await uploadFile(item.file)
+        item.attachmentId = res.data.id
+        attachmentIds.push(res.data.id)
+        uploadedImages.push({
+          attachment_id: res.data.id,
+          file_name: res.data.file_name,
+          mime_type: res.data.mime_type,
+          file_size: res.data.file_size,
+          is_image: true,
+        })
+        item.uploading = false
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '上传失败'
+        item.error = msg
+        item.uploading = false
+        ElMessage.error(`图片上传失败: ${msg}`)
+        return // 任一张上传失败就中止
+      }
+    }
+  }
 
   // 添加用户消息到本地
   const userMsgId = Date.now()
   const userMsg: ChatMessage = {
     id: userMsgId,
     role: 'user',
-    content: text,
+    content: text || '[图片]',
+    extra_data: attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : undefined,
     created_at: new Date().toISOString(),
   }
   chatStore.appendMessage(userMsg)
+
+  // 关联图片到消息
+  if (uploadedImages.length > 0) {
+    messageImages.value[userMsgId] = uploadedImages
+  }
+
+  // 清空待发送图片
+  pendingImages.value.forEach((item) => URL.revokeObjectURL(item.previewUrl))
+  pendingImages.value = []
   input.value = ''
   streaming.value = true
   scrollToBottom()
@@ -133,7 +283,10 @@ async function sendMessage() {
   try {
     const ragParam = useRag.value ? '&use_rag=true' : ''
     const conversationParam = conversationId ? `&conversation_id=${conversationId}` : ''
-    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text)}${conversationParam}${ragParam}`
+    const attachmentParams = attachmentIds.length > 0
+      ? attachmentIds.map((id) => `&attachment_ids=${id}`).join('')
+      : ''
+    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text || '[图片]')}${conversationParam}${ragParam}${attachmentParams}`
     const response = await fetch(url, {
       headers: {
         Accept: 'text/event-stream',
@@ -188,6 +341,23 @@ async function sendMessage() {
           continue
         }
 
+        // 图片元数据（__IMAGES__:<json>），不展示
+        if (event.startsWith('__IMAGES__:')) {
+          try {
+            const json = event.slice('__IMAGES__:'.length)
+            const payload = JSON.parse(json)
+            if (payload.images && Array.isArray(payload.images)) {
+              messageImages.value[assistantMsgId] = payload.images as ImageMeta[]
+            }
+            if (typeof payload.vision_capable === 'boolean') {
+              visionCapable.value = payload.vision_capable
+            }
+          } catch {
+            // ignore parse error
+          }
+          continue
+        }
+
         // 会话 ID 元数据（__CONV_ID__:<id>），不展示
         if (event.startsWith('__CONV_ID__:')) {
           const persistedConversationId = Number(event.slice('__CONV_ID__:'.length))
@@ -234,6 +404,21 @@ async function sendMessage() {
         try {
           const json = event.slice('__CITATIONS__:'.length)
           messageCitations.value[assistantMsgId] = JSON.parse(json)
+        } catch {
+          // ignore
+        }
+        continue
+      }
+      if (event.startsWith('__IMAGES__:')) {
+        try {
+          const json = event.slice('__IMAGES__:'.length)
+          const payload = JSON.parse(json)
+          if (payload.images && Array.isArray(payload.images)) {
+            messageImages.value[assistantMsgId] = payload.images as ImageMeta[]
+          }
+          if (typeof payload.vision_capable === 'boolean') {
+            visionCapable.value = payload.vision_capable
+          }
         } catch {
           // ignore
         }
@@ -324,26 +509,34 @@ function getCitations(msgId: number): Citation[] {
   return messageCitations.value[msgId] || []
 }
 
-function openRenameDialog() {
-  const currentId = chatStore.currentConversationId
-  if (!currentId) return
-  renameTitle.value = currentConversationTitle.value
+function openRenameDialog(conversationId?: number, title?: string) {
+  const targetId = conversationId ?? chatStore.currentConversationId
+  if (!targetId) return
+  renameConversationId.value = targetId
+  renameTitle.value = title ?? currentConversationTitle.value
   renameDialogVisible.value = true
 }
 
 async function handleRenameConversation() {
-  const currentId = chatStore.currentConversationId
+  const currentId = renameConversationId.value
   const nextTitle = renameTitle.value.trim()
   if (!currentId || !nextTitle) return
 
   try {
     await chatStore.renameConversation(currentId, nextTitle)
     renameDialogVisible.value = false
+    renameConversationId.value = null
     ElMessage.success('已更新会话标题')
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '重命名失败'
     ElMessage.error(msg)
   }
+}
+
+function handleCloseRenameDialog() {
+  renameDialogVisible.value = false
+  renameConversationId.value = null
+  renameTitle.value = ''
 }
 </script>
 
@@ -356,15 +549,16 @@ async function handleRenameConversation() {
       v-show="sidebarVisible"
       class="w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col"
     >
-      <div class="p-3 border-b border-gray-200 dark:border-gray-700">
+      <div class="h-14 px-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-center">
         <el-button
           type="primary"
-          class="w-full"
+          circle
           :disabled="streaming"
           @click="handleNewConversation"
         >
-          新对话
+          <el-icon><Plus /></el-icon>
         </el-button>
+        
       </div>
 
       <div class="flex-1 overflow-y-auto">
@@ -398,20 +592,34 @@ async function handleRenameConversation() {
               {{ new Date(conv.updated_at).toLocaleDateString('zh-CN') }}
             </p>
           </div>
-          <el-button
-            class="opacity-0 group-hover:opacity-100 transition-opacity ml-2"
-            size="small"
-            text
-            type="danger"
-            :disabled="streaming"
-            @click.stop="handleDeleteConversation(conv.id)"
+          <div
+            class="ml-2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity "
+            :class="{
+              'opacity-100': conv.id === chatStore.currentConversationId,
+            }"
           >
-            <el-icon :size="14">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em">
-                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-              </svg>
-            </el-icon>
-          </el-button>
+            <el-button
+              size="small"
+              text
+              :disabled="streaming"
+              @click.stop="openRenameDialog(conv.id, conv.title)"
+            >
+              <el-icon :size="14">
+                <Edit />
+              </el-icon>
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="danger"
+              :disabled="streaming"
+              @click.stop="handleDeleteConversation(conv.id)"
+            >
+              <el-icon :size="14">
+                <Delete />
+              </el-icon>
+            </el-button>
+          </div>
         </div>
       </div>
     </aside>
@@ -421,49 +629,42 @@ async function handleRenameConversation() {
     <!-- ================================ -->
     <div class="flex-1 flex flex-col min-w-0">
       <!-- 顶部信息栏 -->
-      <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <el-button size="small" text @click="sidebarVisible = !sidebarVisible">
-          <el-icon :size="18">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em">
-              <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-            </svg>
-          </el-icon>
-        </el-button>
-        <span class="text-sm text-gray-600 dark:text-gray-400 truncate flex-1">
-          {{ currentConversationTitle }}
-        </span>
+      <div class="grid grid-cols-[112px_minmax(0,1fr)_112px] items-center px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div class="flex items-center justify-start">
+          <el-button size="small" text @click="sidebarVisible = !sidebarVisible">
+            <el-icon :size="18">
+              <Fold />
+            </el-icon>
+          </el-button>
+        </div>
 
-        <el-button
-          size="small"
-          text
-          :disabled="streaming || !chatStore.currentConversationId"
-          @click="openRenameDialog"
-          class="shrink-0"
-        >
-          重命名
-        </el-button>
+        <div class="text-sm text-gray-600 dark:text-gray-400 truncate text-center font-medium">
+          {{ currentConversationTitle }}
+        </div>
 
         <!-- RAG 开关 -->
-        <el-tooltip
-          :content="useRag ? '知识库检索已开启 — AI 会参考你的文档回答问题' : '点击开启知识库检索'"
-          placement="bottom"
-        >
-          <el-button
-            size="small"
-            :type="useRag ? 'success' : 'default'"
-            :disabled="streaming"
-            @click="useRag = !useRag"
-            class="shrink-0"
+        <div class="flex items-center justify-end">
+          <el-tooltip
+            :content="useRag ? '知识库检索已开启 — AI 会参考你的文档回答问题' : '点击开启知识库检索'"
+            placement="bottom"
           >
-            <span class="flex items-center gap-1">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-              </svg>
-              {{ useRag ? '知识库' : '普通' }}
-            </span>
-          </el-button>
-        </el-tooltip>
+            <el-button
+              size="small"
+              :type="useRag ? 'success' : 'default'"
+              :disabled="streaming"
+              @click="useRag = !useRag"
+              class="min-w-22 justify-center"
+            >
+              <span class="flex items-center justify-center gap-1 w-full">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+                {{ useRag ? '知识库' : '普通' }}
+              </span>
+            </el-button>
+          </el-tooltip>
+        </div>
       </div>
 
       <!-- 消息区域 -->
@@ -502,8 +703,33 @@ async function handleRenameConversation() {
         <template v-for="msg in chatStore.messages" :key="msg.id">
           <div v-if="msg.role === 'user'" class="flex justify-end">
             <div class="max-w-[75%]">
+              <!-- 图片附件展示 -->
+              <div
+                v-if="getImageMeta(msg.id).length > 0"
+                class="flex flex-wrap justify-end gap-1.5 mb-1.5"
+              >
+                <div
+                  v-for="img in getImageMeta(msg.id)"
+                  :key="img.attachment_id"
+                  class="relative group"
+                >
+                  <img
+                    v-if="imageBlobCache[img.attachment_id]"
+                    :src="imageBlobCache[img.attachment_id]"
+                    :alt="img.file_name"
+                    class="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-blue-300"
+                    loading="lazy"
+                  />
+                  <div
+                    v-else
+                    class="w-[120px] h-[90px] rounded-lg bg-gray-200 dark:bg-gray-600 flex items-center justify-center"
+                  >
+                    <span class="text-xs text-gray-400">加载中…</span>
+                  </div>
+                </div>
+              </div>
               <div class="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-br-md">
-                <p class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
+                <p class="whitespace-pre-wrap wrap-break-word">{{ msg.content }}</p>
               </div>
               <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 text-right mr-2">
                 {{ formatTime(msg.created_at) }}
@@ -514,7 +740,7 @@ async function handleRenameConversation() {
           <div v-else class="flex justify-start">
             <div class="max-w-[75%]">
               <div class="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-md">
-                <p class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
+                <p class="whitespace-pre-wrap wrap-break-word">{{ msg.content }}</p>
               </div>
 
               <!-- 引用来源卡片 -->
@@ -587,7 +813,90 @@ async function handleRenameConversation() {
           </span>
         </div>
 
+        <!-- 待发送图片缩略图 -->
+        <div
+          v-if="pendingImages.length > 0"
+          class="max-w-4xl mx-auto mb-2 flex flex-wrap gap-2"
+        >
+          <div
+            v-for="(item, idx) in pendingImages"
+            :key="idx"
+            class="relative group w-16 h-16 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600"
+          >
+            <img
+              :src="item.previewUrl"
+              class="w-full h-full object-cover"
+              :alt="item.file.name"
+            />
+            <!-- 上传中蒙层 -->
+            <div
+              v-if="item.uploading"
+              class="absolute inset-0 bg-black/40 flex items-center justify-center"
+            >
+              <span class="text-white text-xs">上传中…</span>
+            </div>
+            <!-- 错误标记 -->
+            <div
+              v-if="item.error"
+              class="absolute inset-0 bg-red-500/60 flex items-center justify-center"
+            >
+              <span class="text-white text-xs">失败</span>
+            </div>
+            <!-- 删除按钮 -->
+            <button
+              v-if="!item.uploading"
+              class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              @click="removePendingImage(idx)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 视觉降级 / 启用提示 -->
+        <div
+          v-if="pendingImages.length > 0"
+          class="max-w-4xl mx-auto mb-2"
+        >
+          <span
+            v-if="!visionCapable"
+            class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+              <path d="M12 2L2 22h20L12 2z" />
+              <line x1="12" y1="9" x2="12" y2="14" />
+              <circle cx="12" cy="18" r="0.5" fill="currentColor" />
+            </svg>
+            当前模型不支持图像理解，图片仅作展示，AI 无法查看图片内容
+          </span>
+          <span
+            v-else
+            class="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+            </svg>
+            视觉理解已启用 — AI 将分析图片内容并回复
+          </span>
+        </div>
+
         <div class="max-w-4xl mx-auto flex items-end gap-3">
+          <el-button
+            size="default"
+            :disabled="streaming"
+            @click="triggerImagePicker"
+            class="shrink-0"
+          >
+            <el-icon :size="18"><Picture /></el-icon>
+          </el-button>
+          <input
+            ref="imageInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
+            class="hidden"
+            @change="handleImageFilesSelected"
+          />
           <el-input
             v-model="input"
             type="textarea"
@@ -600,7 +909,7 @@ async function handleRenameConversation() {
           />
           <el-button
             type="primary"
-            :disabled="!input.trim() || streaming"
+            :disabled="(!input.trim() && pendingImages.length === 0) || streaming"
             @click="sendMessage"
           >
             发送
@@ -613,6 +922,7 @@ async function handleRenameConversation() {
       v-model="renameDialogVisible"
       title="重命名会话"
       width="420px"
+      @closed="handleCloseRenameDialog"
     >
       <el-input
         v-model="renameTitle"
@@ -622,7 +932,7 @@ async function handleRenameConversation() {
         @keydown.enter.prevent="handleRenameConversation"
       />
       <template #footer>
-        <el-button @click="renameDialogVisible = false">取消</el-button>
+        <el-button @click="handleCloseRenameDialog">取消</el-button>
         <el-button
           type="primary"
           :disabled="!renameTitle.trim()"

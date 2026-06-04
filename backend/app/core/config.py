@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     EMBEDDING_API_BASE: str = ""
     EMBEDDING_MODEL: str = "text-embedding-v2"
 
+    # 多模态视觉模型
+    VISION_MODEL: str = ""  # 如 qwen3.7-plus / qwen-vl-plus，留空则自动回退纯文本
+
     model_config = {
         "env_file": str(ENV_PATH),
         "case_sensitive": True,

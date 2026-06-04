@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: int | None = None
     use_rag: bool = False
+    attachment_ids: list[int] = []
 
 
 class ChatResponse(BaseModel):
@@ -21,6 +22,7 @@ class ChatResponse(BaseModel):
     answer: str
     conversation_id: int
     citations: list["CitationSchema"] = []
+    attachment_ids: list[int] = []
 
 
 # ============================================================
@@ -78,6 +80,7 @@ class MessageResponse(BaseModel):
     conversation_id: int
     role: str
     content: str
+    extra_data: dict | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
