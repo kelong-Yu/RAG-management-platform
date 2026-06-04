@@ -19,6 +19,11 @@ export function createConversation(title?: string) {
   return api.post<Conversation>('/chat/conversations', title ? { title } : {})
 }
 
+/** 手动更新会话标题 */
+export function updateConversationTitle(id: number, title: string) {
+  return api.patch<Conversation>(`/chat/conversations/${id}`, { title })
+}
+
 /** 删除会话 */
 export function deleteConversation(id: number) {
   return api.delete(`/chat/conversations/${id}`)

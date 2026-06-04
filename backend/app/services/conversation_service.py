@@ -134,7 +134,7 @@ def build_context_messages(
 def set_conversation_title_from_first_message(
     db: Session, conversation_id: int
 ) -> None:
-    """将首条用户消息截取作为会话标题。"""
+    """将首条用户消息压缩成简短摘要作为会话标题。"""
     first = (
         db.query(Message)
         .filter(
@@ -145,8 +145,35 @@ def set_conversation_title_from_first_message(
         .first()
     )
     if first and first.content:
-        title = first.content.strip()[:30]
+        title = _build_conversation_title(first.content)
         db.query(Conversation).filter(Conversation.id == conversation_id).update(
             {"title": title}
         )
         db.commit()
+
+
+def _build_conversation_title(content: str) -> str:
+    """基于用户首条消息生成简短标题，避免直接出现长文本或纯空白。"""
+    normalized = " ".join(content.strip().split())
+    if not normalized:
+        return "新对话"
+
+    for prefix in ("请帮我", "帮我", "请问", "我想", "我想要", "想问下"):
+        if normalized.startswith(prefix) and len(normalized) > len(prefix):
+            normalized = normalized[len(prefix):].strip()
+            break
+
+    if not normalized:
+        return "新对话"
+
+    preferred_separators = ("。", "！", "？", ".", "!", "?", "\n", ",", "，")
+    for sep in preferred_separators:
+        pos = normalized.find(sep)
+        if 0 < pos <= 24:
+            return normalized[:pos].strip()[:24]
+
+    return (
+        normalized[:24].rstrip() + "..."
+        if len(normalized) > 24
+        else normalized
+    )

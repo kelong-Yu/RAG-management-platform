@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     # ============================================================
     # 上传配置
     # ============================================================
-    UPLOAD_DIR: str = str(PROJECT_ROOT / "uploads")
+    # 默认上传目录移出 Git 仓库，避免私密文件被误提交
+    UPLOAD_DIR: str = str(Path.home() / ".ai-chat" / "uploads")
     MAX_UPLOAD_SIZE_MB: int = 20
     ALLOWED_IMAGE_MIME_TYPES: list[str] = [
         "image/jpeg",

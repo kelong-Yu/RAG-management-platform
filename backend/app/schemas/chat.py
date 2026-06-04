@@ -49,6 +49,12 @@ class ConversationCreate(BaseModel):
     title: str | None = None
 
 
+class ConversationUpdate(BaseModel):
+    """更新会话标题。"""
+
+    title: str
+
+
 class ConversationResponse(BaseModel):
     """会话概要（列表用）。"""
 

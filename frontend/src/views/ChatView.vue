@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElTag } from 'element-plus'
 
 import { getToken } from '@/utils'
 import { useChatStore } from '@/stores/chat'
 import type { ChatMessage, Citation } from '@/types'
+
+const RAG_STORAGE_KEY = 'chat:useRag'
+const CITATIONS_STORAGE_KEY = 'chat:citations'
 
 // ---- Store ----
 
@@ -16,21 +19,54 @@ const input = ref('')
 const streaming = ref(false)
 const messageArea = ref<HTMLElement>()
 const sidebarVisible = ref(true)
-const useRag = ref(false)
+const useRag = ref(localStorage.getItem(RAG_STORAGE_KEY) === 'true')
 // 引用来源，key 为消息的临时 ID
-const messageCitations = ref<Record<number, Citation[]>>({})
+const messageCitations = ref<Record<number, Citation[]>>(
+  (() => {
+    const raw = localStorage.getItem(CITATIONS_STORAGE_KEY)
+    if (!raw) return {}
+    try {
+      return JSON.parse(raw) as Record<number, Citation[]>
+    } catch {
+      return {}
+    }
+  })(),
+)
+const renameDialogVisible = ref(false)
+const renameTitle = ref('')
+
+const currentConversationTitle = computed(() =>
+  chatStore.conversations.find(c => c.id === chatStore.currentConversationId)?.title || '新对话'
+)
 
 // ---- 初始化 ----
 
 onMounted(async () => {
   await chatStore.fetchConversations()
-  if (chatStore.conversations.length > 0) {
+  if (
+    chatStore.currentConversationId &&
+    chatStore.conversations.some(c => c.id === chatStore.currentConversationId)
+  ) {
+    await chatStore.switchConversation(chatStore.currentConversationId)
+  } else if (chatStore.conversations.length > 0) {
     await chatStore.switchConversation(chatStore.conversations[0].id)
   } else {
-    await chatStore.newConversation()
+    chatStore.beginDraftConversation()
   }
   scrollToBottom()
 })
+
+watch(useRag, (value) => {
+  localStorage.setItem(RAG_STORAGE_KEY, String(value))
+})
+
+watch(
+  messageCitations,
+  (value) => {
+    localStorage.setItem(CITATIONS_STORAGE_KEY, JSON.stringify(value))
+  },
+  { deep: true },
+)
 
 // ---- SSE 解析 ----
 
@@ -75,11 +111,7 @@ async function sendMessage() {
   const text = input.value.trim()
   if (!text || streaming.value) return
 
-  // 确保有当前会话
-  if (!chatStore.currentConversationId) {
-    await chatStore.ensureConversation()
-  }
-  const conversationId = chatStore.currentConversationId!
+  const conversationId = chatStore.currentConversationId
 
   // 添加用户消息到本地
   const userMsgId = Date.now()
@@ -100,7 +132,8 @@ async function sendMessage() {
 
   try {
     const ragParam = useRag.value ? '&use_rag=true' : ''
-    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text)}&conversation_id=${conversationId}${ragParam}`
+    const conversationParam = conversationId ? `&conversation_id=${conversationId}` : ''
+    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text)}${conversationParam}${ragParam}`
     const response = await fetch(url, {
       headers: {
         Accept: 'text/event-stream',
@@ -130,6 +163,20 @@ async function sendMessage() {
       buffer = remainder
 
       for (const event of events) {
+        if (event.startsWith('__ASSISTANT_ID__:')) {
+          const persistedId = Number(event.slice('__ASSISTANT_ID__:'.length))
+          if (assistantMsgId && Number.isFinite(persistedId)) {
+            const existing = messageCitations.value[assistantMsgId]
+            chatStore.replaceMessageId(assistantMsgId, persistedId)
+            if (existing) {
+              messageCitations.value[persistedId] = existing
+              delete messageCitations.value[assistantMsgId]
+            }
+            assistantMsgId = persistedId
+          }
+          continue
+        }
+
         // 引用元数据（__CITATIONS__:<json>），不展示
         if (event.startsWith('__CITATIONS__:')) {
           try {
@@ -143,6 +190,10 @@ async function sendMessage() {
 
         // 会话 ID 元数据（__CONV_ID__:<id>），不展示
         if (event.startsWith('__CONV_ID__:')) {
+          const persistedConversationId = Number(event.slice('__CONV_ID__:'.length))
+          if (Number.isFinite(persistedConversationId)) {
+            await chatStore.switchConversation(persistedConversationId)
+          }
           continue
         }
 
@@ -166,6 +217,19 @@ async function sendMessage() {
     buffer += decoder.decode()
     const { events: finalEvents } = consumeSSEBuffer(buffer, true)
     for (const event of finalEvents) {
+      if (event.startsWith('__ASSISTANT_ID__:')) {
+        const persistedId = Number(event.slice('__ASSISTANT_ID__:'.length))
+        if (assistantMsgId && Number.isFinite(persistedId)) {
+          const existing = messageCitations.value[assistantMsgId]
+          chatStore.replaceMessageId(assistantMsgId, persistedId)
+          if (existing) {
+            messageCitations.value[persistedId] = existing
+            delete messageCitations.value[assistantMsgId]
+          }
+          assistantMsgId = persistedId
+        }
+        continue
+      }
       if (event.startsWith('__CITATIONS__:')) {
         try {
           const json = event.slice('__CITATIONS__:'.length)
@@ -175,7 +239,13 @@ async function sendMessage() {
         }
         continue
       }
-      if (event.startsWith('__CONV_ID__:')) continue
+      if (event.startsWith('__CONV_ID__:')) {
+        const persistedConversationId = Number(event.slice('__CONV_ID__:'.length))
+        if (Number.isFinite(persistedConversationId)) {
+          await chatStore.switchConversation(persistedConversationId)
+        }
+        continue
+      }
       if (!assistantMsgAdded) {
         assistantMsgId = Date.now()
         chatStore.appendMessage({
@@ -223,7 +293,7 @@ async function handleSwitchConversation(id: number) {
 
 async function handleNewConversation() {
   if (streaming.value) return
-  await chatStore.newConversation()
+  chatStore.beginDraftConversation()
   scrollToBottom()
 }
 
@@ -252,6 +322,28 @@ function formatTime(ts: string): string {
 
 function getCitations(msgId: number): Citation[] {
   return messageCitations.value[msgId] || []
+}
+
+function openRenameDialog() {
+  const currentId = chatStore.currentConversationId
+  if (!currentId) return
+  renameTitle.value = currentConversationTitle.value
+  renameDialogVisible.value = true
+}
+
+async function handleRenameConversation() {
+  const currentId = chatStore.currentConversationId
+  const nextTitle = renameTitle.value.trim()
+  if (!currentId || !nextTitle) return
+
+  try {
+    await chatStore.renameConversation(currentId, nextTitle)
+    renameDialogVisible.value = false
+    ElMessage.success('已更新会话标题')
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '重命名失败'
+    ElMessage.error(msg)
+  }
 }
 </script>
 
@@ -338,8 +430,18 @@ function getCitations(msgId: number): Citation[] {
           </el-icon>
         </el-button>
         <span class="text-sm text-gray-600 dark:text-gray-400 truncate flex-1">
-          {{ chatStore.conversations.find(c => c.id === chatStore.currentConversationId)?.title || '新对话' }}
+          {{ currentConversationTitle }}
         </span>
+
+        <el-button
+          size="small"
+          text
+          :disabled="streaming || !chatStore.currentConversationId"
+          @click="openRenameDialog"
+          class="shrink-0"
+        >
+          重命名
+        </el-button>
 
         <!-- RAG 开关 -->
         <el-tooltip
@@ -506,5 +608,29 @@ function getCitations(msgId: number): Citation[] {
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="renameDialogVisible"
+      title="重命名会话"
+      width="420px"
+    >
+      <el-input
+        v-model="renameTitle"
+        maxlength="100"
+        show-word-limit
+        placeholder="输入新的会话标题"
+        @keydown.enter.prevent="handleRenameConversation"
+      />
+      <template #footer>
+        <el-button @click="renameDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!renameTitle.trim()"
+          @click="handleRenameConversation"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>

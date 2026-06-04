@@ -6,12 +6,28 @@ import {
   createConversation,
   deleteConversation as deleteConversationApi,
   getMessages,
+  updateConversationTitle as updateConversationTitleApi,
 } from '@/api/chat'
+
+const CURRENT_CONVERSATION_STORAGE_KEY = 'chat:currentConversationId'
+
+function persistCurrentConversationId(id: number | null) {
+  if (id === null) {
+    localStorage.removeItem(CURRENT_CONVERSATION_STORAGE_KEY)
+    return
+  }
+  localStorage.setItem(CURRENT_CONVERSATION_STORAGE_KEY, String(id))
+}
 
 export const useChatStore = defineStore('chat', () => {
   // ---- 状态 ----
   const conversations = ref<Conversation[]>([])
-  const currentConversationId = ref<number | null>(null)
+  const currentConversationId = ref<number | null>(
+    (() => {
+      const raw = localStorage.getItem(CURRENT_CONVERSATION_STORAGE_KEY)
+      return raw ? Number(raw) : null
+    })(),
+  )
   const messages = ref<ChatMessage[]>([])
   const loadingConversations = ref(false)
   const loadingMessages = ref(false)
@@ -35,8 +51,16 @@ export const useChatStore = defineStore('chat', () => {
     const conv = res.data
     conversations.value.unshift(conv)
     currentConversationId.value = conv.id
+    persistCurrentConversationId(conv.id)
     messages.value = []
     return conv
+  }
+
+  /** 开始一个未持久化的新对话草稿 */
+  function beginDraftConversation() {
+    currentConversationId.value = null
+    persistCurrentConversationId(null)
+    messages.value = []
   }
 
   /** 确保存在当前会话（没有则新建） */
@@ -53,6 +77,7 @@ export const useChatStore = defineStore('chat', () => {
   /** 切换到指定会话并加载历史消息 */
   async function switchConversation(id: number) {
     currentConversationId.value = id
+    persistCurrentConversationId(id)
     loadingMessages.value = true
     try {
       const res = await getMessages(id)
@@ -67,13 +92,12 @@ export const useChatStore = defineStore('chat', () => {
     await deleteConversationApi(id)
     conversations.value = conversations.value.filter((c) => c.id !== id)
     if (currentConversationId.value === id) {
-      currentConversationId.value = null
-      messages.value = []
+      beginDraftConversation()
       // 自动切换到第一个会话或新建
       if (conversations.value.length > 0) {
         await switchConversation(conversations.value[0].id)
       } else {
-        await newConversation()
+        beginDraftConversation()
       }
     }
   }
@@ -91,6 +115,25 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 用持久化后的消息 id 替换前端临时 id */
+  function replaceMessageId(oldId: number, newId: number) {
+    const target = messages.value.find((msg) => msg.id === oldId)
+    if (target) {
+      target.id = newId
+    }
+  }
+
+  /** 手动更新当前会话标题 */
+  async function renameConversation(id: number, title: string) {
+    const res = await updateConversationTitleApi(id, title)
+    const updated = res.data
+    const index = conversations.value.findIndex((conv) => conv.id === id)
+    if (index >= 0) {
+      conversations.value[index] = updated
+    }
+    return updated
+  }
+
   /** 刷新当前会话列表（用于更新标题和排序） */
   async function refreshConversations() {
     await fetchConversations()
@@ -104,11 +147,14 @@ export const useChatStore = defineStore('chat', () => {
     loadingMessages,
     fetchConversations,
     newConversation,
+    beginDraftConversation,
     ensureConversation,
     switchConversation,
     removeConversation,
     appendMessage,
     appendToLastMessage,
+    replaceMessageId,
+    renameConversation,
     refreshConversations,
   }
 })

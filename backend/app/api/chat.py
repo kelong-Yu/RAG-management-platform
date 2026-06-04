@@ -14,6 +14,7 @@ from app.schemas.chat import (
     CitationSchema,
     ConversationCreate,
     ConversationResponse,
+    ConversationUpdate,
     MessageResponse,
 )
 from app.services.chat_service import send_message, send_message_stream
@@ -120,6 +121,17 @@ async def chat_delete_conversation(
     """删除会话及其所有消息。"""
     delete_conversation(db, conversation_id, user_id)
     return {"message": "deleted"}
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def chat_update_conversation(
+    conversation_id: int,
+    body: ConversationUpdate,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """手动更新会话标题。"""
+    return update_conversation_title(db, conversation_id, user_id, body.title)
 
 
 @router.get(

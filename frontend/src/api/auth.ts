@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { LoginRequest, LoginResponse, RegisterRequest, User } from '@/types'
 import router from '@/router'
+import { removeToken } from '@/utils'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
@@ -35,12 +36,10 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // 动态导入 store 以避免循环依赖（stores/user 导入了 api/auth）
-      const { useUserStore } = await import('@/stores/user')
-      useUserStore().logout()
+      removeToken()
       // 避免在 /login 页重复跳转
       if (router.currentRoute.value.name !== 'login') {
-        router.push('/login')
+        window.location.replace('/login')
       }
     }
     return Promise.reject(error)

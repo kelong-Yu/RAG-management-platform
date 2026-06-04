@@ -5,6 +5,10 @@ dist
 # backend
 .venv
 __pycache__
+backend/uploads/
+uploads/
+.ai-chat/
+.ai-chat-uploads/
 
 # env
 .env

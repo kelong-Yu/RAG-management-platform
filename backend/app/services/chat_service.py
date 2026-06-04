@@ -129,13 +129,16 @@ async def send_message_stream(
         yield token
 
     # 6. 流结束后保存助手消息
-    save_message(db, conv_id, "assistant", full_answer)
+    assistant_message = save_message(db, conv_id, "assistant", full_answer)
 
-    # 7. 发送引用数据
+    # 7. 告知前端持久化后的 assistant message id，便于引用缓存复用
+    yield f"__ASSISTANT_ID__:{assistant_message.id}"
+
+    # 8. 发送引用数据
     if citations:
         yield f"__CITATIONS__:{json.dumps(citations, ensure_ascii=False)}"
 
-    # 8. 告知前端 conversation_id（新的或用已有的）
+    # 9. 告知前端 conversation_id（新的或用已有的）
     yield f"__CONV_ID__:{conv_id}"
 
 
