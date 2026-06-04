@@ -5,6 +5,7 @@ import { Delete, Edit, Fold, Plus, Picture } from '@element-plus/icons-vue'
 
 import { getToken } from '@/utils'
 import { useChatStore } from '@/stores/chat'
+import { getChatCapabilities } from '@/api/chat'
 import { uploadFile } from '@/api/files'
 import type { ChatMessage, Citation, ImageMeta } from '@/types'
 
@@ -81,9 +82,24 @@ watch(
   { deep: true },
 )
 
+watch(
+  () => chatStore.messages,
+  (messages) => {
+    hydrateMessageImagesFromMessages(messages)
+  },
+  { deep: true, immediate: true },
+)
+
 // ---- 初始化 ----
 
 onMounted(async () => {
+  try {
+    const capabilitiesRes = await getChatCapabilities()
+    visionCapable.value = capabilitiesRes.data.vision_capable
+  } catch {
+    // 能力查询失败时保持默认 false，避免阻塞聊天页初始化
+  }
+
   await chatStore.fetchConversations()
   if (
     chatStore.currentConversationId &&
@@ -205,6 +221,34 @@ async function loadImageBlobUrl(attachmentId: number): Promise<string> {
 
 function getImageMeta(msgId: number): ImageMeta[] {
   return messageImages.value[msgId] || []
+}
+
+function hydrateMessageImagesFromMessages(messages: ChatMessage[]) {
+  for (const msg of messages) {
+    const attachmentIds = extractAttachmentIds(msg)
+    if (attachmentIds.length === 0) continue
+    if (messageImages.value[msg.id]?.length) continue
+
+    messageImages.value[msg.id] = attachmentIds.map((attachmentId) => ({
+      attachment_id: attachmentId,
+      file_name: `image-${attachmentId}`,
+      mime_type: 'image/*',
+      file_size: 0,
+      is_image: true,
+    }))
+  }
+}
+
+function extractAttachmentIds(msg: ChatMessage): number[] {
+  const extra = msg.extra_data
+  if (!extra || typeof extra !== 'object') return []
+
+  const attachmentIds = (extra as Record<string, unknown>).attachment_ids
+  if (!Array.isArray(attachmentIds)) return []
+
+  return attachmentIds.filter(
+    (id): id is number => typeof id === 'number' && Number.isFinite(id),
+  )
 }
 
 // ---- 方法 ----

@@ -83,6 +83,11 @@ export interface ChatResponse {
   attachment_ids: number[]
 }
 
+/** 聊天能力 */
+export interface ChatCapabilities {
+  vision_capable: boolean
+}
+
 /** 引用来源 */
 export interface Citation {
   document_name: string

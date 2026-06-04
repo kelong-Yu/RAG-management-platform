@@ -25,6 +25,12 @@ class ChatResponse(BaseModel):
     attachment_ids: list[int] = []
 
 
+class ChatCapabilitiesResponse(BaseModel):
+    """聊天能力查询响应。"""
+
+    vision_capable: bool
+
+
 # ============================================================
 # Citation
 # ============================================================

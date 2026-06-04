@@ -3,7 +3,13 @@
  */
 
 import api from './auth'
-import type { ChatMessage, ChatRequest, ChatResponse, Conversation } from '@/types'
+import type {
+  ChatCapabilities,
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  Conversation,
+} from '@/types'
 
 // ============================================================
 // Conversation
@@ -12,6 +18,11 @@ import type { ChatMessage, ChatRequest, ChatResponse, Conversation } from '@/typ
 /** 获取会话列表 */
 export function getConversations() {
   return api.get<Conversation[]>('/chat/conversations')
+}
+
+/** 获取聊天能力开关 */
+export function getChatCapabilities() {
+  return api.get<ChatCapabilities>('/chat/capabilities')
 }
 
 /** 创建新会话 */

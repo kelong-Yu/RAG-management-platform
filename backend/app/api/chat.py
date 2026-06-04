@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.deps import get_current_user_id
 from app.db.session import get_db
 from app.schemas.chat import (
+    ChatCapabilitiesResponse,
     ChatRequest,
     ChatResponse,
     CitationSchema,
@@ -18,6 +19,7 @@ from app.schemas.chat import (
     MessageResponse,
 )
 from app.services.chat_service import send_message, send_message_stream
+from app.services.llm_service import is_vision_capable
 from app.services.conversation_service import (
     create_conversation,
     delete_conversation,
@@ -32,6 +34,12 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # ============================================================
 # 消息发送
 # ============================================================
+
+
+@router.get("/capabilities", response_model=ChatCapabilitiesResponse)
+async def chat_capabilities():
+    """返回当前聊天能力开关。"""
+    return ChatCapabilitiesResponse(vision_capable=is_vision_capable())
 
 
 @router.post("/", response_model=ChatResponse)
