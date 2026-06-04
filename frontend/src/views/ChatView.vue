@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElTag } from 'element-plus'
 
 import { getToken } from '@/utils'
 import { useChatStore } from '@/stores/chat'
-import type { ChatMessage } from '@/types'
+import type { ChatMessage, Citation } from '@/types'
 
 // ---- Store ----
 
@@ -16,6 +16,9 @@ const input = ref('')
 const streaming = ref(false)
 const messageArea = ref<HTMLElement>()
 const sidebarVisible = ref(true)
+const useRag = ref(false)
+// 引用来源，key 为消息的临时 ID
+const messageCitations = ref<Record<number, Citation[]>>({})
 
 // ---- 初始化 ----
 
@@ -79,8 +82,9 @@ async function sendMessage() {
   const conversationId = chatStore.currentConversationId!
 
   // 添加用户消息到本地
+  const userMsgId = Date.now()
   const userMsg: ChatMessage = {
-    id: Date.now(),
+    id: userMsgId,
     role: 'user',
     content: text,
     created_at: new Date().toISOString(),
@@ -95,7 +99,8 @@ async function sendMessage() {
   const token = getToken()
 
   try {
-    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text)}&conversation_id=${conversationId}`
+    const ragParam = useRag.value ? '&use_rag=true' : ''
+    const url = `${baseURL}/chat/stream?message=${encodeURIComponent(text)}&conversation_id=${conversationId}${ragParam}`
     const response = await fetch(url, {
       headers: {
         Accept: 'text/event-stream',
@@ -114,6 +119,7 @@ async function sendMessage() {
     const decoder = new TextDecoder()
     let buffer = ''
     let assistantMsgAdded = false
+    let assistantMsgId = 0
 
     while (true) {
       const { done, value } = await reader.read()
@@ -124,14 +130,26 @@ async function sendMessage() {
       buffer = remainder
 
       for (const event of events) {
-        // 元数据 token（__CONV_ID__:<id>），不展示
+        // 引用元数据（__CITATIONS__:<json>），不展示
+        if (event.startsWith('__CITATIONS__:')) {
+          try {
+            const json = event.slice('__CITATIONS__:'.length)
+            messageCitations.value[assistantMsgId] = JSON.parse(json)
+          } catch {
+            // ignore parse error
+          }
+          continue
+        }
+
+        // 会话 ID 元数据（__CONV_ID__:<id>），不展示
         if (event.startsWith('__CONV_ID__:')) {
           continue
         }
 
         if (!assistantMsgAdded) {
+          assistantMsgId = Date.now()
           chatStore.appendMessage({
-            id: Date.now(),
+            id: assistantMsgId,
             role: 'assistant',
             content: event,
             created_at: new Date().toISOString(),
@@ -148,10 +166,20 @@ async function sendMessage() {
     buffer += decoder.decode()
     const { events: finalEvents } = consumeSSEBuffer(buffer, true)
     for (const event of finalEvents) {
+      if (event.startsWith('__CITATIONS__:')) {
+        try {
+          const json = event.slice('__CITATIONS__:'.length)
+          messageCitations.value[assistantMsgId] = JSON.parse(json)
+        } catch {
+          // ignore
+        }
+        continue
+      }
       if (event.startsWith('__CONV_ID__:')) continue
       if (!assistantMsgAdded) {
+        assistantMsgId = Date.now()
         chatStore.appendMessage({
-          id: Date.now(),
+          id: assistantMsgId,
           role: 'assistant',
           content: event,
           created_at: new Date().toISOString(),
@@ -220,6 +248,10 @@ function formatTime(ts: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function getCitations(msgId: number): Citation[] {
+  return messageCitations.value[msgId] || []
 }
 </script>
 
@@ -305,9 +337,31 @@ function formatTime(ts: string): string {
             </svg>
           </el-icon>
         </el-button>
-        <span class="text-sm text-gray-600 dark:text-gray-400 truncate">
+        <span class="text-sm text-gray-600 dark:text-gray-400 truncate flex-1">
           {{ chatStore.conversations.find(c => c.id === chatStore.currentConversationId)?.title || '新对话' }}
         </span>
+
+        <!-- RAG 开关 -->
+        <el-tooltip
+          :content="useRag ? '知识库检索已开启 — AI 会参考你的文档回答问题' : '点击开启知识库检索'"
+          placement="bottom"
+        >
+          <el-button
+            size="small"
+            :type="useRag ? 'success' : 'default'"
+            :disabled="streaming"
+            @click="useRag = !useRag"
+            class="shrink-0"
+          >
+            <span class="flex items-center gap-1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              {{ useRag ? '知识库' : '普通' }}
+            </span>
+          </el-button>
+        </el-tooltip>
       </div>
 
       <!-- 消息区域 -->
@@ -336,6 +390,9 @@ function formatTime(ts: string): string {
             </el-icon>
             <p class="text-lg">开始新对话</p>
             <p class="text-sm mt-1">在下方输入消息，开始与 AI 交流</p>
+            <p v-if="useRag" class="text-sm mt-1 text-green-600 dark:text-green-400">
+              知识库检索模式已开启
+            </p>
           </div>
         </div>
 
@@ -357,6 +414,42 @@ function formatTime(ts: string): string {
               <div class="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-md">
                 <p class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
               </div>
+
+              <!-- 引用来源卡片 -->
+              <div
+                v-if="getCitations(msg.id).length > 0"
+                class="mt-2 space-y-1.5"
+              >
+                <div class="text-xs text-gray-400 dark:text-gray-500 font-medium mb-1">
+                  参考来源：
+                </div>
+                <div
+                  v-for="(citation, idx) in getCitations(msg.id)"
+                  :key="idx"
+                  class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-2 text-xs"
+                >
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-medium text-green-800 dark:text-green-200 truncate">
+                      {{ citation.document_name }}
+                    </span>
+                    <el-tag
+                      v-if="citation.page_number"
+                      size="small"
+                      type="success"
+                      class="shrink-0"
+                    >
+                      第{{ citation.page_number }}页
+                    </el-tag>
+                    <span class="text-green-600 dark:text-green-400 shrink-0">
+                      相关度 {{ (citation.similarity * 100).toFixed(0) }}%
+                    </span>
+                  </div>
+                  <p class="text-gray-600 dark:text-gray-400 line-clamp-3">
+                    {{ citation.content_snippet }}
+                  </p>
+                </div>
+              </div>
+
               <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-2">
                 {{ formatTime(msg.created_at) }}
               </p>
@@ -378,12 +471,26 @@ function formatTime(ts: string): string {
 
       <!-- 输入区域 -->
       <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-4">
+        <!-- RAG 状态提示 -->
+        <div
+          v-if="useRag"
+          class="max-w-4xl mx-auto mb-2"
+        >
+          <span class="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            知识库检索已开启 — AI 会参考你的文档回答问题
+          </span>
+        </div>
+
         <div class="max-w-4xl mx-auto flex items-end gap-3">
           <el-input
             v-model="input"
             type="textarea"
             :rows="1"
-            placeholder="输入消息… (Enter 发送，Shift+Enter 换行)"
+            :placeholder="useRag ? '输入问题，AI 将从知识库中检索相关知识… (Enter 发送，Shift+Enter 换行)' : '输入消息… (Enter 发送，Shift+Enter 换行)'"
             resize="none"
             class="flex-1"
             :disabled="streaming"

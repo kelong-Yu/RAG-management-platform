@@ -70,12 +70,23 @@ export interface ChatMessage {
 export interface ChatRequest {
   message: string
   conversation_id?: number
+  use_rag?: boolean
 }
 
 /** 聊天响应 */
 export interface ChatResponse {
   answer: string
   conversation_id: number
+  citations: Citation[]
+}
+
+/** 引用来源 */
+export interface Citation {
+  document_name: string
+  page_number: number | null
+  chunk_index: number
+  content_snippet: string
+  similarity: number
 }
 
 // ============================================================

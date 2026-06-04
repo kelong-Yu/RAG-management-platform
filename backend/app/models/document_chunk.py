@@ -1,9 +1,10 @@
 """
-DocumentChunk 数据模型 — 文档切片，保留页码、顺序和原始内容。
+DocumentChunk 数据模型 — 文档切片，保留页码、顺序和原始内容及向量。
 """
 
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +28,9 @@ class DocumentChunk(Base):
         Integer, nullable=True, comment="起始页码（1-based，PDF 原文页码）"
     )
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="切片文本内容")
+    embedding = mapped_column(
+        Vector(1536), nullable=True, comment="文本向量（DashScope text-embedding-v2）"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

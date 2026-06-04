@@ -12,13 +12,30 @@ class ChatRequest(BaseModel):
 
     message: str
     conversation_id: int | None = None
+    use_rag: bool = False
 
 
 class ChatResponse(BaseModel):
-    """模型返回的聊天回复（含会话 ID）。"""
+    """模型返回的聊天回复（含会话 ID 和可选引用）。"""
 
     answer: str
     conversation_id: int
+    citations: list["CitationSchema"] = []
+
+
+# ============================================================
+# Citation
+# ============================================================
+
+
+class CitationSchema(BaseModel):
+    """引用来源信息。"""
+
+    document_name: str
+    page_number: int | None
+    chunk_index: int
+    content_snippet: str  # 截取前 200 字符
+    similarity: float
 
 
 # ============================================================

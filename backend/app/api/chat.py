@@ -1,5 +1,5 @@
 """
-聊天接口 — 消息发送、SSE 流式、会话管理。
+聊天接口 — 消息发送、SSE 流式、会话管理（含 RAG 检索增强）。
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
+    CitationSchema,
     ConversationCreate,
     ConversationResponse,
     MessageResponse,
@@ -41,30 +42,43 @@ async def chat_send(
     """非流式发送聊天消息，返回 AI 回复。
 
     首次对话不传 conversation_id，后端自动创建新会话。
+    设置 use_rag=true 启用知识库检索增强。
     """
-    answer, conv_id = await send_message(
-        db, user_id, body.message, body.conversation_id
+    answer, conv_id, citations = await send_message(
+        db,
+        user_id,
+        body.message,
+        body.conversation_id,
+        use_rag=body.use_rag,
     )
-    return ChatResponse(answer=answer, conversation_id=conv_id)
+    return ChatResponse(
+        answer=answer,
+        conversation_id=conv_id,
+        citations=[CitationSchema(**c) for c in citations],
+    )
 
 
 @router.get("/stream")
 async def chat_stream(
     message: str = Query(..., description="用户输入的消息"),
     conversation_id: int | None = Query(None, description="会话 ID，不传则自动创建"),
+    use_rag: bool = Query(False, description="是否启用知识库检索增强"),
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """流式发送聊天消息（SSE），逐 Token 返回。
 
-    返回格式：``data: <token>``，末尾发送 ``data: __CONV_ID__:<id>`` 告知前端会话 ID。
+    返回格式：``data: <token>``。
+    末尾发送：
+    - ``data: __CITATIONS__:<json>`` 包含知识库引用
+    - ``data: __CONV_ID__:<id>`` 告知前端会话 ID。
     兼容浏览器 EventSource API。
     """
 
     async def event_generator():
         try:
             async for token in send_message_stream(
-                db, user_id, message, conversation_id
+                db, user_id, message, conversation_id, use_rag=use_rag
             ):
                 yield {"data": token}
         except Exception as e:

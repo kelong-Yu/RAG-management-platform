@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: ai_postgres_db  # 加上别名，方便管理
     restart: always                 # 崩溃或重启时自动运行
     environment:

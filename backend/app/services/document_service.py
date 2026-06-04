@@ -1,9 +1,10 @@
 """
 Document Service — PDF 文本提取、chunk 切分、文档处理状态编排。
 
-处理流程：uploaded → parsing → chunking → ready / failed
+处理流程：uploaded → parsing → chunking → embedding → ready / failed
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -194,9 +195,9 @@ def create_document_from_attachment(
 
 def process_document(document_id: int, user_id: int, db: Session) -> Document:
     """
-    处理文档：文本提取 → chunk 切分 → 保存 chunks。
+    处理文档：文本提取 → chunk 切分 → 保存 chunks → Embedding。
 
-    状态流转：uploaded/parsing/chunking/ready → parsing → chunking → ready
+    状态流转：uploaded/parsing/chunking/embedding/ready → parsing → chunking → embedding → ready
     失败时：→ failed（记录 error_message）
     """
     document = _get_document_with_check(document_id, user_id, db)
@@ -237,7 +238,20 @@ def process_document(document_id: int, user_id: int, db: Session) -> Document:
             "Document %d: created %d chunks", document.id, len(chunks_data)
         )
 
-        # ── 阶段 3: 完成 ──
+        # ── 阶段 3: Embedding ──
+        _set_status(document, "embedding", db)
+        logger.info("Document %d: starting embedding generation", document.id)
+
+        try:
+            _embed_chunks_sync(document.id, db)
+        except Exception as embed_err:
+            logger.error(
+                "Document %d: embedding failed - %s", document.id, embed_err
+            )
+            # Embedding 失败不阻断，chunk 数据仍可用，状态标记为 ready 但记录 warning
+            document.error_message = f"Embedding 失败: {embed_err}"
+
+        # ── 阶段 4: 完成 ──
         _set_status(document, "ready", db)
         logger.info("Document %d: processing complete", document.id)
 
@@ -350,3 +364,43 @@ def _set_status(document: Document, status: str, db: Session) -> None:
     """更新文档处理状态并立即 flush。"""
     document.status = status
     db.flush()
+
+
+def _embed_chunks_sync(document_id: int, db: Session) -> None:
+    """同步包装器：为文档的所有未向量化 chunk 生成 embedding。
+
+    在独立的事件循环中运行 async embedding 调用。
+    """
+    from app.services.embedding_service import generate_embeddings
+
+    chunks = (
+        db.query(DocumentChunk)
+        .filter(
+            DocumentChunk.document_id == document_id,
+            DocumentChunk.embedding.is_(None),
+        )
+        .all()
+    )
+
+    if not chunks:
+        logger.info("Document %d: no chunks need embedding", document_id)
+        return
+
+    # 提取文本
+    texts = [c.content for c in chunks]
+
+    # 在同步上下文中运行异步 embedding 生成
+    loop = asyncio.new_event_loop()
+    try:
+        embeddings = loop.run_until_complete(generate_embeddings(texts))
+    finally:
+        loop.close()
+
+    # 将向量写回各 chunk
+    for chunk, embedding in zip(chunks, embeddings):
+        chunk.embedding = embedding
+
+    db.flush()
+    logger.info(
+        "Document %d: generated embeddings for %d chunks", document_id, len(chunks)
+    )

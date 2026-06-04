@@ -43,12 +43,17 @@ class Settings(BaseSettings):
         "application/pdf",
     ]
 
-    # LLM API（后续实现）
+    # LLM API
     DASH_SCOPE_API_KEY: str = ""
     DASH_SCOPE_API_BASE: str = ""
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_API_BASE: str = ""
     TAVILY_API_KEY: str = ""
+
+    # Embedding
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_API_BASE: str = ""
+    EMBEDDING_MODEL: str = "text-embedding-v2"
 
     model_config = {
         "env_file": str(ENV_PATH),
