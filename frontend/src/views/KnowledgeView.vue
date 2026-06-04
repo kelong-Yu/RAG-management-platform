@@ -10,11 +10,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createDocument,
   deleteDocument,
+  getDocumentChunks,
+  getDocumentDetail,
   getDocuments,
   reprocessDocument,
 } from '@/api/documents'
 import { getFiles } from '@/api/files'
-import type { Attachment, Document } from '@/types'
+import type {
+  Attachment,
+  Document,
+  DocumentChunk,
+  DocumentDetail,
+} from '@/types'
 
 // ── 状态 ──────────────────────────────────────────────────────────────
 
@@ -28,6 +35,13 @@ const pdfAttachments = ref<Attachment[]>([])
 const loadingAttachments = ref(false)
 const showCreateDialog = ref(false)
 const creatingDocId = ref<number | null>(null)
+
+// 文档详情抽屉
+const detailDrawerVisible = ref(false)
+const detailLoading = ref(false)
+const detailError = ref<string | null>(null)
+const selectedDocument = ref<DocumentDetail | null>(null)
+const selectedChunks = ref<DocumentChunk[]>([])
 
 // ── 计算属性 ──────────────────────────────────────────────────────────
 
@@ -89,6 +103,34 @@ async function handleRetry(documentId: number) {
     const msg = e instanceof Error ? e.message : '重试失败'
     ElMessage.error(msg)
   }
+}
+
+async function handleOpenDetail(documentId: number) {
+  detailDrawerVisible.value = true
+  detailLoading.value = true
+  detailError.value = null
+
+  try {
+    const [detailRes, chunksRes] = await Promise.all([
+      getDocumentDetail(documentId),
+      getDocumentChunks(documentId),
+    ])
+    selectedDocument.value = detailRes.data
+    selectedChunks.value = chunksRes.data.items
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '加载文档详情失败'
+    detailError.value = msg
+    ElMessage.error(msg)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function handleCloseDetail() {
+  detailDrawerVisible.value = false
+  detailError.value = null
+  selectedDocument.value = null
+  selectedChunks.value = []
 }
 
 async function handleDelete(document: Document) {
@@ -270,6 +312,13 @@ onMounted(() => {
         <!-- 操作 -->
         <div class="flex items-center gap-1 shrink-0">
           <el-button
+            size="small"
+            plain
+            @click="handleOpenDetail(doc.id)"
+          >
+            详情
+          </el-button>
+          <el-button
             v-if="doc.status === 'failed'"
             size="small"
             @click="handleRetry(doc.id)"
@@ -287,6 +336,103 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 文档详情抽屉 -->
+    <el-drawer
+      :model-value="detailDrawerVisible"
+      title="文档详情"
+      size="50%"
+      @close="handleCloseDetail"
+    >
+      <div v-if="detailLoading" class="flex justify-center py-12">
+        <el-icon class="is-loading text-2xl text-gray-400">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="size-6"
+          >
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+          </svg>
+        </el-icon>
+      </div>
+
+      <div
+        v-else-if="detailError"
+        class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-500"
+      >
+        {{ detailError }}
+      </div>
+
+      <div v-else-if="selectedDocument" class="space-y-6">
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/60">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 break-all">
+                {{ selectedDocument.name }}
+              </h3>
+              <div class="mt-2 space-y-1 text-sm text-gray-500 dark:text-gray-400">
+                <p>状态：{{ statusLabel(selectedDocument.status) }}</p>
+                <p>切片数量：{{ selectedDocument.chunk_count }}</p>
+                <p>文档类型：{{ selectedDocument.doc_type }}</p>
+                <p>创建时间：{{ formatTime(selectedDocument.created_at) }}</p>
+                <p>更新时间：{{ formatTime(selectedDocument.updated_at) }}</p>
+              </div>
+            </div>
+            <el-tag :type="statusType(selectedDocument.status)" size="small">
+              {{ statusLabel(selectedDocument.status) }}
+            </el-tag>
+          </div>
+          <div
+            v-if="selectedDocument.error_message"
+            class="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-500"
+          >
+            {{ selectedDocument.error_message }}
+          </div>
+        </div>
+
+        <div>
+          <div class="mb-3 flex items-center justify-between">
+            <h4 class="text-base font-medium text-gray-800 dark:text-gray-100">
+              切片预览
+            </h4>
+            <el-button
+              size="small"
+              plain
+              @click="handleOpenDetail(selectedDocument.id)"
+            >
+              刷新
+            </el-button>
+          </div>
+
+          <div
+            v-if="selectedChunks.length === 0"
+            class="rounded border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-400 dark:border-gray-600 dark:text-gray-500"
+          >
+            当前文档暂无切片数据
+          </div>
+
+          <div v-else class="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+            <div
+              v-for="chunk in selectedChunks"
+              :key="chunk.id"
+              class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
+            >
+              <div class="mb-2 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                <span>切片 #{{ chunk.chunk_index }}</span>
+                <span v-if="chunk.page_number !== null">页码 {{ chunk.page_number }}</span>
+                <span>{{ formatTime(chunk.created_at) }}</span>
+              </div>
+              <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
 
     <!-- 新建文档对话框 -->
     <el-dialog
