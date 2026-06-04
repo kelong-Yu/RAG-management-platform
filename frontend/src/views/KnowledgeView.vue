@@ -124,6 +124,7 @@ function statusLabel(status: string): string {
     uploaded: '待处理',
     parsing: '解析中',
     chunking: '切片中',
+    embedding: '向量化中',
     ready: '就绪',
     failed: '失败',
   }
@@ -135,6 +136,7 @@ function statusType(status: string): 'info' | 'warning' | 'success' | 'danger' |
     uploaded: 'info',
     parsing: 'warning',
     chunking: 'warning',
+    embedding: 'warning',
     ready: 'success',
     failed: 'danger',
   }
@@ -244,7 +246,7 @@ onMounted(() => {
           <div class="text-xs text-gray-400 dark:text-gray-500 space-x-3">
             <span>更新于 {{ formatTime(doc.updated_at) }}</span>
             <span v-if="doc.status === 'ready'">
-              · {{ (doc as { chunk_count?: number }).chunk_count ?? '?' }} 个切片
+              · {{ doc.chunk_count ?? 0 }} 个切片
             </span>
           </div>
           <!-- 错误信息 -->

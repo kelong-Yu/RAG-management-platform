@@ -8,6 +8,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.attachment import Attachment
@@ -312,6 +313,24 @@ def get_chunk_count(document_id: int, db: Session) -> int:
         .filter(DocumentChunk.document_id == document_id)
         .count()
     )
+
+
+def get_chunk_counts(document_ids: list[int], db: Session) -> dict[int, int]:
+    """批量获取文档切片数量，避免列表接口逐条查询。"""
+    if not document_ids:
+        return {}
+
+    rows = (
+        db.query(
+            DocumentChunk.document_id,
+            func.count(DocumentChunk.id).label("chunk_count"),
+        )
+        .filter(DocumentChunk.document_id.in_(document_ids))
+        .group_by(DocumentChunk.document_id)
+        .all()
+    )
+
+    return {row.document_id: row.chunk_count for row in rows}
 
 
 def delete_document(document_id: int, user_id: int, db: Session) -> None:

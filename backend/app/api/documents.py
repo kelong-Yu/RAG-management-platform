@@ -19,6 +19,7 @@ from app.services.document_service import (
     create_document_from_attachment,
     delete_document,
     get_chunk_count,
+    get_chunk_counts,
     get_document,
     get_document_chunks,
     get_user_documents,
@@ -66,8 +67,23 @@ def list_documents(
 ):
     """获取当前用户的文档列表。"""
     items, total = get_user_documents(user_id, db, page=page, page_size=page_size)
+    chunk_counts = get_chunk_counts([item.id for item in items], db)
     return DocumentListResponse(
-        items=[DocumentResponse.model_validate(item) for item in items],
+        items=[
+            DocumentResponse(
+                id=item.id,
+                user_id=item.user_id,
+                attachment_id=item.attachment_id,
+                name=item.name,
+                doc_type=item.doc_type,
+                status=item.status,
+                error_message=item.error_message,
+                chunk_count=chunk_counts.get(item.id, 0),
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+            for item in items
+        ],
         total=total,
     )
 

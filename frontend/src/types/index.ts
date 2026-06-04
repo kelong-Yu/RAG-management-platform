@@ -137,7 +137,13 @@ export interface UploadState {
 export type DocumentType = 'pdf' | 'txt' | 'html'
 
 /** 文档处理状态 */
-export type DocumentStatus = 'uploaded' | 'parsing' | 'chunking' | 'ready' | 'failed'
+export type DocumentStatus =
+  | 'uploaded'
+  | 'parsing'
+  | 'chunking'
+  | 'embedding'
+  | 'ready'
+  | 'failed'
 
 /** 文档 */
 export interface Document {
@@ -148,6 +154,7 @@ export interface Document {
   doc_type: DocumentType
   status: DocumentStatus
   error_message: string | null
+  chunk_count?: number | null
   created_at: string
   updated_at: string
 }

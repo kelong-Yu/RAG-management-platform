@@ -11,8 +11,9 @@ Retriever Service — 基于 pgvector 的语义检索，限定用户可访问的
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
+from pgvector.sqlalchemy import Vector
 
 from app.services.embedding_service import generate_embedding
 
@@ -70,11 +71,12 @@ async def retrieve(
         FROM document_chunks dc
         JOIN documents d ON d.id = dc.document_id
         WHERE d.user_id = :user_id
+          AND d.status = 'ready'
           AND dc.embedding IS NOT NULL
           AND 1 - (dc.embedding <=> :embedding) > :threshold
         ORDER BY dc.embedding <=> :embedding
         LIMIT :top_k
-    """)
+    """).bindparams(bindparam("embedding", type_=Vector(1536)))
 
     result = db.execute(
         sql,
