@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user_id
+from app.api.deps import get_current_admin_user, get_current_user_id
 from app.db.session import get_db
 from app.services.user_service import get_user_by_id
 
@@ -14,7 +14,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/")
-async def list_users(db: Session = Depends(get_db)):
+async def list_users(
+    _admin=Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
     """测试接口 — 查询所有用户，验证数据库连接。"""
     from app.models.user import User
 

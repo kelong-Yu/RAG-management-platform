@@ -20,6 +20,9 @@ class DocumentResponse(BaseModel):
     doc_type: str
     status: str
     error_message: str | None
+    is_system: bool = False
+    is_deletable: bool = True
+    source_name: str | None = None
     chunk_count: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -75,3 +78,16 @@ class DocumentDetailResponse(DocumentResponse):
     """文档详情（比列表多一个切片数量统计）。"""
 
     chunk_count: int
+
+
+class AdminDocumentResponse(DocumentResponse):
+    """管理员知识库文档响应。"""
+
+    owner_username: str | None = None
+
+
+class AdminDocumentListResponse(BaseModel):
+    """管理员知识库文档列表响应。"""
+
+    items: list[AdminDocumentResponse]
+    total: int

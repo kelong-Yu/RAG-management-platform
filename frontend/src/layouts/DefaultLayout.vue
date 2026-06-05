@@ -45,6 +45,13 @@ function handleLogout() {
             >
               知识库
             </router-link>
+            <router-link
+              v-if="userStore.user?.role === 'admin'"
+              to="/admin"
+              class="text-sm text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            >
+              管理
+            </router-link>
             <button
               class="text-sm text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
               @click="handleLogout"

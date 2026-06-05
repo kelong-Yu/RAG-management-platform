@@ -15,6 +15,9 @@ from app.core.config import settings
 # 确保所有模型被导入，供 Alembic 和 create_all 发现
 import app.models  # noqa: F401
 from app.db.session import Base, engine
+from app.db.session import SessionLocal
+from app.services.document_service import ensure_default_knowledge_base
+from app.services.user_service import ensure_admin_user
 
 # ── 日志配置 ──────────────────────────────────────────────────────────────
 
@@ -71,6 +74,14 @@ async def lifespan(app: FastAPI):
     create_all 仅作为开发阶段安全兜底，后续版本将移除。
     """
     Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        admin = ensure_admin_user(db)
+        ensure_default_knowledge_base(admin.id, db)
+    except Exception as e:
+        logger.error("Startup seed failed: %s", e, exc_info=True)
+    finally:
+        db.close()
     logger.info("Application startup complete")
     yield
     logger.info("Application shutting down")

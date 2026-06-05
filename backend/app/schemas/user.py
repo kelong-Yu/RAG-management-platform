@@ -32,6 +32,21 @@ class TokenResponse(BaseModel):
 class UserResponse(UserBase):
     """对外响应（不含密码）"""
     id: int
+    role: str
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminUserResponse(UserResponse):
+    """管理员用户列表响应。"""
+
+    pass
+
+
+class AdminUserUpdate(BaseModel):
+    """管理员更新用户状态。"""
+
+    role: str | None = None
+    is_active: bool | None = None

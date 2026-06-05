@@ -4,8 +4,11 @@ FastAPI 依赖注入 — JWT 认证等可复用依赖。
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
 from app.core.security import verify_token
+from app.db.session import get_db
+from app.models.user import User
 
 security_scheme = HTTPBearer()
 
@@ -32,3 +35,34 @@ def get_current_user_id(
             detail="令牌中缺少用户标识",
         )
     return int(user_id)
+
+
+def get_current_user(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> User:
+    """获取当前登录用户实体，并校验账号启用状态。"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在或认证已失效",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用",
+        )
+    return user
+
+
+def get_current_admin_user(
+    user: User = Depends(get_current_user),
+) -> User:
+    """管理员权限依赖。"""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return user

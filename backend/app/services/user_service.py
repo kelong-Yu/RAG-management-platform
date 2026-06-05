@@ -7,7 +7,20 @@ from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.user import TokenResponse, UserCreate, UserLogin, UserResponse
+from app.models.attachment import Attachment
+from app.models.conversation import Conversation
+from app.models.document import Document
+from app.schemas.user import (
+    AdminUserUpdate,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+)
+
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin"
+ADMIN_EMAIL = "admin@example.local"
 
 
 def register_user(db: Session, payload: UserCreate) -> UserResponse:
@@ -51,6 +64,8 @@ def register_user(db: Session, payload: UserCreate) -> UserResponse:
         username=username,
         email=email,
         password_hash=hash_password(payload.password),
+        role="user",
+        is_active=True,
     )
     db.add(user)
     db.commit()
@@ -82,6 +97,11 @@ def authenticate_user(db: Session, payload: UserLogin) -> TokenResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
         )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用",
+        )
 
     # 3. 生成 JWT
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -110,3 +130,90 @@ def get_user_by_id(db: Session, user_id: int) -> UserResponse:
             detail="用户不存在",
         )
     return UserResponse.model_validate(user)
+
+
+def ensure_admin_user(db: Session) -> User:
+    """确保系统内置管理员账号存在。
+
+    账号和密码均为 admin。若账号已存在，会强制保持管理员角色和启用状态。
+    """
+    user = db.query(User).filter(User.username == ADMIN_USERNAME).first()
+    if user is None:
+        user = User(
+            username=ADMIN_USERNAME,
+            email=ADMIN_EMAIL,
+            password_hash=hash_password(ADMIN_PASSWORD),
+            role="admin",
+            is_active=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    changed = False
+    if user.role != "admin":
+        user.role = "admin"
+        changed = True
+    if not user.is_active:
+        user.is_active = True
+        changed = True
+    if user.email != ADMIN_EMAIL:
+        user.email = ADMIN_EMAIL
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def list_users(db: Session) -> list[User]:
+    """管理员获取用户列表。"""
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+
+def update_user_by_admin(
+    db: Session,
+    target_user_id: int,
+    payload: AdminUserUpdate,
+    admin_user_id: int,
+) -> User:
+    """管理员更新用户角色或启用状态。"""
+    user = db.query(User).filter(User.id == target_user_id).first()
+    if user is None:
+        raise LookupError("用户不存在")
+    if user.id == admin_user_id and payload.is_active is False:
+        raise ValueError("不能禁用当前管理员账号")
+
+    if payload.role is not None:
+        if payload.role not in {"user", "admin"}:
+            raise ValueError("角色只能是 user 或 admin")
+        user.role = payload.role
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_by_admin(
+    db: Session,
+    target_user_id: int,
+    admin_user_id: int,
+) -> None:
+    """管理员删除用户。内置 admin 和当前账号不可删除。"""
+    user = db.query(User).filter(User.id == target_user_id).first()
+    if user is None:
+        raise LookupError("用户不存在")
+    if user.username == ADMIN_USERNAME or user.id == admin_user_id:
+        raise ValueError("不能删除内置管理员或当前登录账号")
+    related_count = (
+        db.query(Conversation).filter(Conversation.user_id == target_user_id).count()
+        + db.query(Attachment).filter(Attachment.user_id == target_user_id).count()
+        + db.query(Document).filter(Document.user_id == target_user_id).count()
+    )
+    if related_count > 0:
+        raise ValueError("该用户已有业务数据，请先禁用账号而不是删除")
+    db.delete(user)
+    db.commit()

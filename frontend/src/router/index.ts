@@ -40,6 +40,12 @@ const router = createRouter({
       component: () => import('@/views/KnowledgeView.vue'),
       meta: { title: '知识库', requiresAuth: true },
     },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { title: '管理员控制台', requiresAuth: true },
+    },
   ],
 })
 

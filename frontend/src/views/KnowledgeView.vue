@@ -173,6 +173,19 @@ function statusLabel(status: string): string {
   return map[status] || status
 }
 
+function documentTypeLabel(doc: Document | DocumentDetail): string {
+  if (doc.is_system) {
+    return '系统内置'
+  }
+  const map: Record<string, string> = {
+    pdf: 'PDF',
+    md: 'Markdown',
+    txt: '文本',
+    html: 'HTML',
+  }
+  return map[doc.doc_type] || doc.doc_type
+}
+
 function statusType(status: string): 'info' | 'warning' | 'success' | 'danger' | '' {
   const map: Record<string, 'info' | 'warning' | 'success' | 'danger' | ''> = {
     uploaded: 'info',
@@ -284,8 +297,12 @@ onMounted(() => {
             <span class="font-medium text-gray-800 dark:text-gray-100 truncate">
               {{ doc.name }}
             </span>
+            <el-tag v-if="doc.is_system" size="small" type="info">
+              系统内置
+            </el-tag>
           </div>
           <div class="text-xs text-gray-400 dark:text-gray-500 space-x-3">
+            <span>{{ documentTypeLabel(doc) }}</span>
             <span>更新于 {{ formatTime(doc.updated_at) }}</span>
             <span v-if="doc.status === 'ready'">
               · {{ doc.chunk_count ?? 0 }} 个切片
@@ -319,13 +336,14 @@ onMounted(() => {
             详情
           </el-button>
           <el-button
-            v-if="doc.status === 'failed'"
+            v-if="doc.status === 'failed' && !doc.is_system"
             size="small"
             @click="handleRetry(doc.id)"
           >
             重试
           </el-button>
           <el-button
+            v-if="doc.is_deletable"
             size="small"
             type="danger"
             plain
@@ -333,6 +351,9 @@ onMounted(() => {
           >
             删除
           </el-button>
+          <el-tag v-else size="small" type="info">
+            只读
+          </el-tag>
         </div>
       </div>
     </div>
@@ -378,7 +399,10 @@ onMounted(() => {
               <div class="mt-2 space-y-1 text-sm text-gray-500 dark:text-gray-400">
                 <p>状态：{{ statusLabel(selectedDocument.status) }}</p>
                 <p>切片数量：{{ selectedDocument.chunk_count }}</p>
-                <p>文档类型：{{ selectedDocument.doc_type }}</p>
+                <p>文档类型：{{ documentTypeLabel(selectedDocument) }}</p>
+                <p v-if="selectedDocument.is_system">
+                  权限：系统内置文件，仅支持查看详情和参与检索
+                </p>
                 <p>创建时间：{{ formatTime(selectedDocument.created_at) }}</p>
                 <p>更新时间：{{ formatTime(selectedDocument.updated_at) }}</p>
               </div>
@@ -427,7 +451,7 @@ onMounted(() => {
                 <span v-if="chunk.page_number !== null">页码 {{ chunk.page_number }}</span>
                 <span>{{ formatTime(chunk.created_at) }}</span>
               </div>
-              <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
+              <pre class="whitespace-pre-wrap wrap-break-word text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
             </div>
           </div>
         </div>

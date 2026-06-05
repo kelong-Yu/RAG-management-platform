@@ -7,6 +7,8 @@ export interface User {
   id: number
   username: string
   email: string
+  role: 'user' | 'admin'
+  is_active: boolean
   created_at: string
 }
 
@@ -151,7 +153,7 @@ export interface UploadState {
 // ============================================================
 
 /** 文档类型 */
-export type DocumentType = 'pdf' | 'txt' | 'html'
+export type DocumentType = 'pdf' | 'txt' | 'html' | 'md'
 
 /** 文档处理状态 */
 export type DocumentStatus =
@@ -171,6 +173,9 @@ export interface Document {
   doc_type: DocumentType
   status: DocumentStatus
   error_message: string | null
+  is_system: boolean
+  is_deletable: boolean
+  source_name: string | null
   chunk_count?: number | null
   created_at: string
   updated_at: string
@@ -206,4 +211,24 @@ export interface DocumentDetail extends Document {
 /** 创建文档请求 */
 export interface CreateDocumentRequest {
   attachment_id: number
+}
+
+// ============================================================
+// 管理员
+// ============================================================
+
+export interface AdminUser extends User {}
+
+export interface AdminUserUpdate {
+  role?: 'user' | 'admin'
+  is_active?: boolean
+}
+
+export interface AdminDocument extends Document {
+  owner_username: string | null
+}
+
+export interface AdminDocumentListResponse {
+  items: AdminDocument[]
+  total: number
 }

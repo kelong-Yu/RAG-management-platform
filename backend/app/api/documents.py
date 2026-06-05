@@ -78,6 +78,9 @@ def list_documents(
                 doc_type=item.doc_type,
                 status=item.status,
                 error_message=item.error_message,
+                is_system=item.is_system,
+                is_deletable=item.is_deletable,
+                source_name=item.source_name,
                 chunk_count=chunk_counts.get(item.id, 0),
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -109,6 +112,9 @@ def get_document_detail(
         doc_type=document.doc_type,
         status=document.status,
         error_message=document.error_message,
+        is_system=document.is_system,
+        is_deletable=document.is_deletable,
+        source_name=document.source_name,
         created_at=document.created_at,
         updated_at=document.updated_at,
         chunk_count=chunk_count,
@@ -164,6 +170,8 @@ def remove_document(
         delete_document(document_id, user_id, db)
     except LookupError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
     db.commit()
     return {"message": "已删除"}
