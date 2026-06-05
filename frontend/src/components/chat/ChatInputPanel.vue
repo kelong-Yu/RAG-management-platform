@@ -15,7 +15,9 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'update:input', value: string): void
   (e: 'send'): void
+  (e: 'stop'): void
   (e: 'remove-image', index: number): void
+  (e: 'retry-image', index: number): void
   (e: 'image-files-selected', files: FileList | null): void
 }>()
 
@@ -69,9 +71,15 @@ function handleImageFilesSelected(event: Event) {
         </div>
         <div
           v-if="item.error"
-          class="absolute inset-0 bg-red-500/60 flex items-center justify-center"
+          class="absolute inset-0 bg-red-500/60 flex flex-col items-center justify-center gap-0.5"
         >
           <span class="text-white text-xs">失败</span>
+          <button
+            class="text-white text-xs underline hover:no-underline"
+            @click="emit('retry-image', index)"
+          >
+            重试
+          </button>
         </div>
         <button
           v-if="!item.uploading"
@@ -138,8 +146,19 @@ function handleImageFilesSelected(event: Event) {
         @keydown.enter.exact.prevent="emit('send')"
       />
       <el-button
+        v-if="streaming"
+        type="danger"
+        @click="emit('stop')"
+      >
+        <span class="flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 bg-white rounded-sm" />
+          停止
+        </span>
+      </el-button>
+      <el-button
+        v-else
         type="primary"
-        :disabled="(!input.trim() && pendingImages.length === 0) || streaming"
+        :disabled="(!input.trim() && pendingImages.length === 0)"
         @click="emit('send')"
       >
         发送

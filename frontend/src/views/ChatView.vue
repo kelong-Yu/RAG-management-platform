@@ -27,6 +27,10 @@ const {
 
 const input = ref('')
 const messageArea = ref<HTMLElement>()
+const lastSentRequest = ref<{
+  message: string
+  attachmentIds: number[]
+} | null>(null)
 const sidebarVisible = ref(true)
 const useRag = ref(localStorage.getItem(RAG_STORAGE_KEY) === 'true')
 const messageCitations = ref<Record<number, Citation[]>>(
@@ -58,9 +62,10 @@ const {
   removePendingImage,
   clearPendingImages,
   uploadPendingImages,
+  retryUpload,
 } = useChatImages(messages)
 
-const { streaming, streamAssistantReply } = useChatStream({
+const { streaming, streamAssistantReply, stopStreaming } = useChatStream({
   chatStore,
   messageCitations,
   messageImages,
@@ -143,12 +148,32 @@ async function sendMessage() {
   input.value = ''
   scrollToBottom()
 
+  lastSentRequest.value = {
+    message: text || '[图片]',
+    attachmentIds,
+  }
+
   await streamAssistantReply({
     message: text || '[图片]',
     conversationId: currentConversationId.value,
     useRag: useRag.value,
     attachmentIds,
   })
+}
+
+async function retryLastMessage() {
+  if (!lastSentRequest.value || streaming.value) return
+
+  await streamAssistantReply({
+    message: lastSentRequest.value.message,
+    conversationId: currentConversationId.value,
+    useRag: useRag.value,
+    attachmentIds: lastSentRequest.value.attachmentIds,
+  })
+}
+
+async function handleRetryUpload(index: number) {
+  await retryUpload(index)
 }
 
 async function handleSwitchConversation(id: number) {
@@ -244,6 +269,7 @@ function handleCloseRenameDialog() {
           :citations="messageCitations"
           :message-images="messageImages"
           :image-blob-cache="imageBlobCache"
+          @retry="retryLastMessage"
         />
       </div>
 
@@ -255,7 +281,9 @@ function handleCloseRenameDialog() {
         :vision-capable="visionCapable"
         @update:input="input = $event"
         @send="sendMessage"
+        @stop="stopStreaming"
         @remove-image="removePendingImage"
+        @retry-image="handleRetryUpload"
         @image-files-selected="handleImageFilesSelected"
       />
     </div>

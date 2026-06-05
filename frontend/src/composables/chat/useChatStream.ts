@@ -59,6 +59,7 @@ function consumeSSEBuffer(buffer: string, flush = false): SSEParseResult {
 export function useChatStream(options: UseChatStreamOptions) {
   const { chatStore, messageCitations, messageImages, visionCapable, scrollToBottom } = options
   const streaming = ref(false)
+  let abortController: AbortController | null = null
 
   function syncPendingMetadata(state: StreamState) {
     if (!state.assistantMsgId) return
@@ -138,6 +139,18 @@ export function useChatStream(options: UseChatStreamOptions) {
       return
     }
 
+    if (event.startsWith('__ERROR__:')) {
+      const errorMsg = event.slice('__ERROR__:'.length)
+      // 追加错误消息到对话
+      chatStore.appendMessage({
+        id: Date.now(),
+        role: 'assistant',
+        content: `[错误] ${errorMsg}`,
+        created_at: new Date().toISOString(),
+      })
+      return
+    }
+
     if (event.startsWith('__CONV_ID__:')) {
       const persistedConversationId = Number(event.slice('__CONV_ID__:'.length))
       if (Number.isFinite(persistedConversationId)) {
@@ -166,6 +179,7 @@ export function useChatStream(options: UseChatStreamOptions) {
     if (streaming.value) return
 
     streaming.value = true
+    abortController = new AbortController()
     const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
     const token = getToken()
 
@@ -184,6 +198,7 @@ export function useChatStream(options: UseChatStreamOptions) {
           Accept: 'text/event-stream',
           Authorization: `Bearer ${token}`,
         },
+        signal: abortController.signal,
       })
 
       if (!response.ok) {
@@ -235,21 +250,34 @@ export function useChatStream(options: UseChatStreamOptions) {
 
       await chatStore.refreshConversations()
     } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        // 用户主动停止，不追加错误消息
+        return
+      }
       const message = error instanceof Error ? error.message : '请求失败，请重试。'
       chatStore.appendMessage({
         id: Date.now(),
         role: 'assistant',
-        content: message,
+        content: `[错误] ${message}`,
         created_at: new Date().toISOString(),
       })
     } finally {
       streaming.value = false
+      abortController = null
       scrollToBottom()
+    }
+  }
+
+  function stopStreaming() {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
     }
   }
 
   return {
     streaming,
     streamAssistantReply,
+    stopStreaming,
   }
 }

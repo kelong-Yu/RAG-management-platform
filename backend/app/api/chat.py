@@ -2,6 +2,8 @@
 聊天接口 — 消息发送、SSE 流式、会话管理（含 RAG 检索增强）。
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
@@ -27,6 +29,8 @@ from app.services.conversation_service import (
     list_conversations,
     update_conversation_title,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -100,8 +104,14 @@ async def chat_stream(
                 attachment_ids=attachment_ids,
             ):
                 yield {"data": token}
+        except ValueError as e:
+            # 业务校验错误（如附件归属校验失败）
+            logger.warning("Chat stream validation error: user=%d %s", user_id, e)
+            yield {"data": f"__ERROR__:VALIDATION:{e}"}
         except Exception as e:
-            yield {"data": f"[错误] {str(e)}"}
+            logger.error("Chat stream error: user=%d conv=%s %s",
+                         user_id, conversation_id, e, exc_info=True)
+            yield {"data": f"__ERROR__:INTERNAL:{e}"}
 
     return EventSourceResponse(event_generator())
 

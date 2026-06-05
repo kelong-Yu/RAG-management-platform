@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChatMessage, Citation, ImageMeta } from '@/types'
+import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -9,6 +10,10 @@ const props = defineProps<{
   citations: Record<number, Citation[]>
   messageImages: Record<number, ImageMeta[]>
   imageBlobCache: Record<number, string>
+}>()
+
+const emit = defineEmits<{
+  (e: 'retry'): void
 }>()
 
 function formatTime(ts: string): string {
@@ -25,6 +30,9 @@ function getCitations(messageId: number): Citation[] {
 function getImageMeta(messageId: number): ImageMeta[] {
   return props.messageImages[messageId] || []
 }
+
+// 引用面板展开状态
+const expandedCitations = new Set<number>()
 </script>
 
 <template>
@@ -70,12 +78,12 @@ function getImageMeta(messageId: number): ImageMeta[] {
                 v-if="imageBlobCache[image.attachment_id]"
                 :src="imageBlobCache[image.attachment_id]"
                 :alt="image.file_name"
-                class="max-w-[200px] max-h-[200px] rounded-lg object-cover border border-blue-300"
+                class="max-w-200 max-h-200 rounded-lg object-cover border border-blue-300"
                 loading="lazy"
               />
               <div
                 v-else
-                class="w-[120px] h-[90px] rounded-lg bg-gray-200 dark:bg-gray-600 flex items-center justify-center"
+                class="w-120 h-90 rounded-lg bg-gray-200 dark:bg-gray-600 flex items-center justify-center"
               >
                 <span class="text-xs text-gray-400">加载中…</span>
               </div>
@@ -91,48 +99,86 @@ function getImageMeta(messageId: number): ImageMeta[] {
       </div>
 
       <div v-else class="flex justify-start">
-        <div class="max-w-[75%]">
+        <div class="max-w-[85%]">
           <div class="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-md">
-            <p class="whitespace-pre-wrap wrap-break-word">{{ message.content }}</p>
+            <MarkdownContent :content="message.content" />
           </div>
 
           <div
             v-if="getCitations(message.id).length > 0"
-            class="mt-2 space-y-1.5"
+            class="mt-2"
           >
-            <div class="text-xs text-gray-400 dark:text-gray-500 font-medium mb-1">
-              参考来源：
-            </div>
-            <div
-              v-for="(citation, index) in getCitations(message.id)"
-              :key="index"
-              class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-2 text-xs"
+            <button
+              class="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium hover:text-green-800 dark:hover:text-green-300 transition-colors mb-1.5"
+              @click="expandedCitations.has(message.id) ? expandedCitations.delete(message.id) : expandedCitations.add(message.id)"
             >
-              <div class="flex items-center gap-2 mb-1">
-                <span class="font-medium text-green-800 dark:text-green-200 truncate">
-                  {{ citation.document_name }}
-                </span>
-                <el-tag
-                  v-if="citation.page_number"
-                  size="small"
-                  type="success"
-                  class="shrink-0"
-                >
-                  第{{ citation.page_number }}页
-                </el-tag>
-                <span class="text-green-600 dark:text-green-400 shrink-0">
-                  相关度 {{ (citation.similarity * 100).toFixed(0) }}%
-                </span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="14"
+                height="14"
+                :class="{ 'rotate-90': expandedCitations.has(message.id) }"
+                class="transition-transform"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              参考来源 ({{ getCitations(message.id).length }})
+              <span v-if="!expandedCitations.has(message.id)" class="text-green-500/60">
+                — 点击展开
+              </span>
+            </button>
+            <div
+              v-if="expandedCitations.has(message.id)"
+              class="space-y-1.5"
+            >
+              <div
+                v-for="(citation, index) in getCitations(message.id)"
+                :key="index"
+                class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-2.5 text-xs"
+              >
+                <div class="flex items-center gap-2 mb-1.5">
+                  <span class="font-medium text-green-800 dark:text-green-200 truncate">
+                    {{ citation.document_name }}
+                  </span>
+                  <el-tag
+                    v-if="citation.page_number"
+                    size="small"
+                    type="success"
+                    class="shrink-0"
+                  >
+                    第{{ citation.page_number }}页
+                  </el-tag>
+                  <span class="text-green-600 dark:text-green-400 shrink-0 ml-auto">
+                    相关度 {{ (citation.similarity * 100).toFixed(0) }}%
+                  </span>
+                </div>
+                <p class="text-gray-600 dark:text-gray-400 leading-relaxed">
+                  {{ citation.content_snippet }}
+                </p>
               </div>
-              <p class="text-gray-600 dark:text-gray-400 line-clamp-3">
-                {{ citation.content_snippet }}
-              </p>
             </div>
           </div>
 
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-2">
             {{ formatTime(message.created_at) }}
           </p>
+          <!-- 错误重试按钮 -->
+          <div
+            v-if="message.content.startsWith('[错误]')"
+            class="mt-1.5 ml-2"
+          >
+            <el-button
+              size="small"
+              type="warning"
+              plain
+              :disabled="streaming"
+              @click="emit('retry')"
+            >
+              重试
+            </el-button>
+          </div>
         </div>
       </div>
     </template>

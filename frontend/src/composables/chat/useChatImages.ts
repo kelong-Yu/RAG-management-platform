@@ -154,6 +154,34 @@ export function useChatImages(messages: Ref<ChatMessage[]>) {
     return { attachmentIds, uploadedImages }
   }
 
+  async function retryUpload(index: number): Promise<ImageMeta | null> {
+    const item = pendingImages.value[index]
+    if (!item || item.attachmentId) return null
+
+    item.uploading = true
+    item.error = null
+
+    try {
+      const res = await uploadFile(item.file)
+      item.attachmentId = res.data.id
+      item.uploading = false
+      const meta: ImageMeta = {
+        attachment_id: res.data.id,
+        file_name: res.data.file_name,
+        mime_type: res.data.mime_type,
+        file_size: res.data.file_size,
+        is_image: true,
+      }
+      return meta
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '上传失败'
+      item.error = message
+      item.uploading = false
+      ElMessage.error(`重试上传失败: ${message}`)
+      return null
+    }
+  }
+
   async function loadImageBlobUrl(attachmentId: number): Promise<string> {
     if (imageBlobCache.value[attachmentId]) {
       return imageBlobCache.value[attachmentId]
@@ -205,6 +233,7 @@ export function useChatImages(messages: Ref<ChatMessage[]>) {
     removePendingImage,
     clearPendingImages,
     uploadPendingImages,
+    retryUpload,
     getImageMeta,
   }
 }

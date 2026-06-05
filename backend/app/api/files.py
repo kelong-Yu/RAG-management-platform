@@ -12,7 +12,12 @@ from app.api.deps import get_current_user_id
 from app.db.session import get_db
 from app.models.attachment import Attachment
 from app.schemas.attachment import AttachmentListResponse, AttachmentResponse
-from app.services.file_service import delete_attachment, get_user_attachments, save_upload
+from app.services.file_service import (
+    cleanup_orphan_files,
+    delete_attachment,
+    get_user_attachments,
+    save_upload,
+)
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -103,3 +108,18 @@ def get_file_raw(
         media_type=attachment.mime_type,
         filename=attachment.file_name,
     )
+
+
+@router.post("/cleanup")
+def cleanup_files(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """管理员清理孤立文件和过期失败附件。
+
+    注意：当前版本允许任何登录用户触发清理，
+    后续可增加管理员权限校验。
+    """
+    result = cleanup_orphan_files(db)
+    db.commit()
+    return result

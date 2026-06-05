@@ -40,6 +40,7 @@ const emit = defineEmits<{
 
 const attachments = ref<Attachment[]>([])
 const loading = ref(true)
+const error = ref<string | null>(null)
 const dragOver = ref(false)
 const uploadingFiles = ref<Map<number, UploadStatus>>(new Map()) // 用临时 id 追踪
 
@@ -60,10 +61,12 @@ const allowedExtensions = computed(() => {
 
 async function fetchList() {
   loading.value = true
+  error.value = null
   try {
     const res = await getFiles()
     attachments.value = res.data.items
   } catch {
+    error.value = '获取文件列表失败，请检查网络后重试'
     ElMessage.error('获取文件列表失败')
   } finally {
     loading.value = false
@@ -241,6 +244,15 @@ onMounted(() => {
         class="text-center py-6 text-sm text-gray-400"
       >
         加载中…
+      </div>
+
+      <!-- error -->
+      <div
+        v-else-if="error"
+        class="text-center py-6"
+      >
+        <p class="text-sm text-red-500 dark:text-red-400 mb-3">{{ error }}</p>
+        <el-button size="small" @click="fetchList()">重新加载</el-button>
       </div>
 
       <!-- empty -->

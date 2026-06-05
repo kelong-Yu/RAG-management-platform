@@ -427,7 +427,7 @@ onMounted(() => {
                 <span v-if="chunk.page_number !== null">页码 {{ chunk.page_number }}</span>
                 <span>{{ formatTime(chunk.created_at) }}</span>
               </div>
-              <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
+              <pre class="whitespace-pre-wrap wrap-break-word text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
             </div>
           </div>
         </div>
