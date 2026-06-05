@@ -131,7 +131,7 @@ export function useChatImages(messages: Ref<ChatMessage[]>) {
       item.error = null
 
       try {
-        const res = await uploadFile(item.file)
+        const res = await uploadFile(item.file, 'chat')
         item.attachmentId = res.data.id
         attachmentIds.push(res.data.id)
         uploadedImages.push({
@@ -162,7 +162,7 @@ export function useChatImages(messages: Ref<ChatMessage[]>) {
     item.error = null
 
     try {
-      const res = await uploadFile(item.file)
+      const res = await uploadFile(item.file, 'chat')
       item.attachmentId = res.data.id
       item.uploading = false
       const meta: ImageMeta = {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { ChatMessage, Citation, ImageMeta } from '@/types'
 import MarkdownContent from '@/components/chat/MarkdownContent.vue'
 
@@ -32,7 +33,21 @@ function getImageMeta(messageId: number): ImageMeta[] {
 }
 
 // 引用面板展开状态
-const expandedCitations = new Set<number>()
+const expandedCitations = ref<Set<number>>(new Set())
+
+function isCitationExpanded(messageId: number): boolean {
+  return expandedCitations.value.has(messageId)
+}
+
+function toggleCitations(messageId: number) {
+  const next = new Set(expandedCitations.value)
+  if (next.has(messageId)) {
+    next.delete(messageId)
+  } else {
+    next.add(messageId)
+  }
+  expandedCitations.value = next
+}
 </script>
 
 <template>
@@ -64,33 +79,33 @@ const expandedCitations = new Set<number>()
 
     <template v-for="message in messages" :key="message.id">
       <div v-if="message.role === 'user'" class="flex justify-end">
-        <div class="max-w-[75%]">
+        <div class="max-w-[75%] flex flex-col items-end">
           <div
             v-if="getImageMeta(message.id).length > 0"
-            class="flex flex-wrap justify-end gap-1.5 mb-1.5"
+            class="flex flex-wrap justify-end gap-1.5 mb-1.5 max-w-full"
           >
             <div
               v-for="image in getImageMeta(message.id)"
               :key="image.attachment_id"
-              class="relative group"
+              class="relative group shrink-0"
             >
               <img
                 v-if="imageBlobCache[image.attachment_id]"
                 :src="imageBlobCache[image.attachment_id]"
                 :alt="image.file_name"
-                class="max-w-200 max-h-200 rounded-lg object-cover border border-blue-300"
+                class="block w-32 h-32 sm:w-40 sm:h-40 rounded-lg object-cover border border-blue-300 bg-white"
                 loading="lazy"
               />
               <div
                 v-else
-                class="w-120 h-90 rounded-lg bg-gray-200 dark:bg-gray-600 flex items-center justify-center"
+                class="w-32 h-32 sm:w-40 sm:h-40 rounded-lg bg-gray-200 dark:bg-gray-600 flex items-center justify-center"
               >
                 <span class="text-xs text-gray-400">加载中…</span>
               </div>
             </div>
           </div>
-          <div class="bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-br-md">
-            <p class="whitespace-pre-wrap wrap-break-word">{{ message.content }}</p>
+          <div class="inline-block max-w-full bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-br-md">
+            <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
           </div>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 text-right mr-2">
             {{ formatTime(message.created_at) }}
@@ -110,7 +125,7 @@ const expandedCitations = new Set<number>()
           >
             <button
               class="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium hover:text-green-800 dark:hover:text-green-300 transition-colors mb-1.5"
-              @click="expandedCitations.has(message.id) ? expandedCitations.delete(message.id) : expandedCitations.add(message.id)"
+              @click="toggleCitations(message.id)"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -119,18 +134,18 @@ const expandedCitations = new Set<number>()
                 stroke-width="2"
                 width="14"
                 height="14"
-                :class="{ 'rotate-90': expandedCitations.has(message.id) }"
+                :class="{ 'rotate-90': isCitationExpanded(message.id) }"
                 class="transition-transform"
               >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
               参考来源 ({{ getCitations(message.id).length }})
-              <span v-if="!expandedCitations.has(message.id)" class="text-green-500/60">
-                — 点击展开
+              <span v-if="!isCitationExpanded(message.id)" class="text-green-500/60">
+                - 点击展开
               </span>
             </button>
             <div
-              v-if="expandedCitations.has(message.id)"
+              v-if="isCitationExpanded(message.id)"
               class="space-y-1.5"
             >
               <div

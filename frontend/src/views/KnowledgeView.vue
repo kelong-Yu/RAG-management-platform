@@ -70,7 +70,7 @@ async function fetchPdfAttachments() {
   try {
     const res = await getFiles(1, 100)
     pdfAttachments.value = res.data.items.filter(
-      (f) => f.mime_type === 'application/pdf'
+      (f) => f.mime_type === 'application/pdf' && f.source_type !== 'chat'
     )
   } catch {
     ElMessage.error('加载附件列表失败')
@@ -427,7 +427,7 @@ onMounted(() => {
                 <span v-if="chunk.page_number !== null">页码 {{ chunk.page_number }}</span>
                 <span>{{ formatTime(chunk.created_at) }}</span>
               </div>
-              <pre class="whitespace-pre-wrap wrap-break-word text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
+              <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-200 font-sans">{{ chunk.content }}</pre>
             </div>
           </div>
         </div>
@@ -466,7 +466,7 @@ onMounted(() => {
         <div
           v-for="att in pdfAttachments"
           :key="att.id"
-          class="flex items-center justify-between p-3 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750"
+          class="flex items-center justify-between p-3 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
         >
           <div class="flex-1 min-w-0">
             <div class="text-sm truncate font-medium">{{ att.file_name }}</div>

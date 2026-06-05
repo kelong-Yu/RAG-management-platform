@@ -31,6 +31,7 @@ _ALLOWED_EXTENSIONS: dict[str, set[str]] = {
 _ALLOWED_MIME_TYPES: set[str] = set(
     settings.ALLOWED_IMAGE_MIME_TYPES + settings.ALLOWED_DOCUMENT_MIME_TYPES
 )
+_ALLOWED_SOURCE_TYPES = {"upload", "chat", "import"}
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -84,13 +85,20 @@ def _ensure_upload_dir() -> Path:
     return upload_dir
 
 
-def save_upload(file: UploadFile, user_id: int, db: Session) -> Attachment:
+def save_upload(
+    file: UploadFile,
+    user_id: int,
+    db: Session,
+    source_type: str = "upload",
+) -> Attachment:
     """
     保存上传文件：校验 → 清洗文件名 → 写磁盘 → 创建 Attachment 记录。
 
     返回创建的 Attachment ORM 对象（已 flush，含 id）。
     """
     _validate_file(file)
+    if source_type not in _ALLOWED_SOURCE_TYPES:
+        raise ValueError(f"不支持的附件来源类型: {source_type}")
 
     original_name = file.filename  # type: ignore[assignment] — _validate_file 已确保非 None
     safe_name = _sanitize_filename(original_name)
@@ -113,7 +121,7 @@ def save_upload(file: UploadFile, user_id: int, db: Session) -> Attachment:
         file_path=str(file_path),
         mime_type=(file.content_type or "application/octet-stream").lower(),
         file_size=actual_size,
-        source_type="upload",
+        source_type=source_type,
         status="uploaded",
     )
     db.add(attachment)

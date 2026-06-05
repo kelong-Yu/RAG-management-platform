@@ -4,7 +4,7 @@ Files API — 统一文件上传、列表、删除、原始内容获取。
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -25,12 +25,13 @@ router = APIRouter(prefix="/files", tags=["files"])
 @router.post("/upload", response_model=AttachmentResponse)
 def upload_file(
     file: UploadFile = File(...),
+    source_type: str = Form("upload"),
     user_id: int = Depends(get_current_user_id),
     db=Depends(get_db),
 ):
     """上传文件（图片或 PDF）。"""
     try:
-        attachment = save_upload(file, user_id, db)
+        attachment = save_upload(file, user_id, db, source_type=source_type)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

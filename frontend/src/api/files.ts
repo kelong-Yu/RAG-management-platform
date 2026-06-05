@@ -3,12 +3,17 @@
  */
 
 import api from './auth'
-import type { Attachment, AttachmentListResponse } from '@/types'
+import type {
+  Attachment,
+  AttachmentListResponse,
+  AttachmentSourceType,
+} from '@/types'
 
 /** 上传文件（multipart/form-data） */
-export function uploadFile(file: File) {
+export function uploadFile(file: File, sourceType: AttachmentSourceType = 'upload') {
   const form = new FormData()
   form.append('file', file)
+  form.append('source_type', sourceType)
   return api.post<Attachment>('/files/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 60000, // 上传超时 60s

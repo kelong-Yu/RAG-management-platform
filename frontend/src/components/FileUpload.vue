@@ -64,7 +64,7 @@ async function fetchList() {
   error.value = null
   try {
     const res = await getFiles()
-    attachments.value = res.data.items
+    attachments.value = res.data.items.filter((attachment) => attachment.source_type !== 'chat')
   } catch {
     error.value = '获取文件列表失败，请检查网络后重试'
     ElMessage.error('获取文件列表失败')
