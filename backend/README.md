@@ -53,6 +53,7 @@ backend/
 ```bash
 cd backend
 uv sync
+copy app/.env.example app/.env
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
@@ -75,6 +76,7 @@ uv run uvicorn app.main:app --reload --port 8000
 环境变量文件位置：
 
 - `backend/app/.env`
+- 示例模板：`backend/app/.env.example`
 
 常用变量：
 

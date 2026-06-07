@@ -210,7 +210,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto">
+  <div class="max-w-4xl mx-auto pt-4">
     <!-- 标题栏 -->
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
@@ -351,7 +351,7 @@ onMounted(() => {
           >
             删除
           </el-button>
-          <el-tag v-else size="small" type="info">
+          <el-tag v-else type="info" class=" mx-1 ml-3">
             只读
           </el-tag>
         </div>

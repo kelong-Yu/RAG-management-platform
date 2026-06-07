@@ -8,7 +8,7 @@ import FileUpload from '@/components/FileUpload.vue'
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto">
+  <div class="max-w-2xl mx-auto pt-4">
     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">
       文件管理
     </h1>

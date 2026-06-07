@@ -14,7 +14,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="grid grid-cols-[112px_minmax(0,1fr)_112px] items-center px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+  <div class="grid grid-cols-[112px_minmax(0,1fr)_112px] h-14 items-center 
+  px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
     <div class="flex items-center justify-start">
       <el-button size="small" text @click="emit('toggle-sidebar')">
         <el-icon :size="18">
@@ -23,11 +24,11 @@ const emit = defineEmits<{
       </el-button>
     </div>
 
-    <div class="text-sm text-gray-600 dark:text-gray-400 truncate text-center font-medium">
+    <div class="text-sm text-gray-600 dark:text-gray-400 truncate text-center font-medium mr-22">
       {{ currentConversationTitle }}
     </div>
 
-    <div class="flex items-center justify-end">
+    <div class="flex items-center justify-end ">
       <el-tooltip
         :content="useRag ? '知识库检索已开启 — AI 会参考你的文档回答问题' : '点击开启知识库检索'"
         placement="bottom"
@@ -36,7 +37,7 @@ const emit = defineEmits<{
           size="small"
           :type="useRag ? 'success' : 'default'"
           :disabled="streaming"
-          class="min-w-22 justify-center"
+          class="min-w-22 justify-center mr-8"
           @click="emit('toggle-rag')"
         >
           <span class="flex items-center justify-center gap-1 w-full">

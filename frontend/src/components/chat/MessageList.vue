@@ -61,9 +61,9 @@ function toggleCitations(messageId: number) {
 
     <div
       v-if="messages.length === 0 && !streaming && !loading"
-      class="flex items-center justify-center h-full"
+      class="flex items-center justify-center h-130"
     >
-      <div class="text-center text-gray-400 dark:text-gray-500">
+      <div class="text-center  text-gray-400 dark:text-gray-500">
         <el-icon :size="48" class="mb-3">
           <svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em">
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
@@ -105,7 +105,7 @@ function toggleCitations(messageId: number) {
             </div>
           </div>
           <div class="inline-block max-w-full bg-blue-600 text-white px-4 py-2.5 rounded-2xl rounded-br-md">
-            <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
+            <p class="whitespace-pre-wrap wrap-break-word">{{ message.content }}</p>
           </div>
           <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 text-right mr-2">
             {{ formatTime(message.created_at) }}

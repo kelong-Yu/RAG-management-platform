@@ -24,7 +24,7 @@ const emit = defineEmits<{
     v-show="visible"
     class="w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col"
   >
-    <div class="h-14 px-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-center">
+    <div class="h-14 px-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-center">
       <el-button
         type="primary"
         circle

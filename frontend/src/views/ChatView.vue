@@ -238,7 +238,7 @@ function handleCloseRenameDialog() {
 </script>
 
 <template>
-  <div class="flex h-[calc(100vh-7rem)] gap-0">
+  <div class="flex h-[calc(100vh-3rem)] gap-0">
     <ConversationSidebar
       :visible="sidebarVisible"
       :conversations="conversations"

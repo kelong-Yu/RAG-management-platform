@@ -18,7 +18,7 @@ function handleLogout() {
       <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
         <!-- 品牌 -->
         <router-link to="/" class="text-xl font-bold text-gray-800 dark:text-gray-100 hover:text-blue-600 transition-colors">
-          AI Chat
+          IKP 智能知识库问答平台
         </router-link>
 
         <!-- 右侧操作 -->
@@ -72,7 +72,7 @@ function handleLogout() {
     </header>
 
     <!-- 主内容区 -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="h-full w-full mx-auto ">
       <router-view />
     </main>
   </div>

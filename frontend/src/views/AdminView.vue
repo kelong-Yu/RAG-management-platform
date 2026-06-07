@@ -145,7 +145,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto space-y-8">
+  <div class="max-w-6xl mx-auto space-y-8 pt-4">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
         管理员控制台
