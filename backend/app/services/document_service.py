@@ -4,7 +4,6 @@ Document Service — PDF 文本提取、chunk 切分、文档处理状态编排�
 处理流程：uploaded → parsing → chunking → embedding → ready / failed
 """
 
-import asyncio
 import hashlib
 import logging
 import re
@@ -483,11 +482,8 @@ def _set_status(document: Document, status: str, db: Session) -> None:
     db.flush()
 
 
-def _embed_chunks_sync(document_id: int, db: Session) -> None:
-    """同步包装器：为文档的所有未向量化 chunk 生成 embedding。
-
-    在独立的事件循环中运行 async embedding 调用。
-    """
+async def _embed_chunks(document_id: int, db: Session) -> None:
+    """异步为文档的所有未向量化 chunk 生成 embedding。"""
     from app.services.embedding_service import generate_embeddings
 
     chunks = (
@@ -506,12 +502,7 @@ def _embed_chunks_sync(document_id: int, db: Session) -> None:
     # 提取文本
     texts = [c.content for c in chunks]
 
-    # 在同步上下文中运行异步 embedding 生成
-    loop = asyncio.new_event_loop()
-    try:
-        embeddings = loop.run_until_complete(generate_embeddings(texts))
-    finally:
-        loop.close()
+    embeddings = await generate_embeddings(texts)
 
     # 将向量写回各 chunk
     for chunk, embedding in zip(chunks, embeddings):
@@ -523,19 +514,24 @@ def _embed_chunks_sync(document_id: int, db: Session) -> None:
     )
 
 
+def _embed_chunks_sync(document_id: int, db: Session) -> None:
+    """同步包装器：为文档的所有未向量化 chunk 生成 embedding。"""
+    import asyncio
+
+    asyncio.run(_embed_chunks(document_id, db))
+
+
 # ── 系统默认知识库 ───────────────────────────────────────────────────────
 
 
-def ensure_default_knowledge_base(admin_user_id: int, db: Session) -> Document | None:
-    """将 backend/Default-know-base.md 导入为系统内置知识库。
-
-    该文档对所有用户可见，可参与检索，但不可被用户删除。
-    若源文件内容发生变化，会重建切片并重新尝试 embedding。
-    """
+def _prepare_default_knowledge_base(
+    admin_user_id: int, db: Session
+) -> tuple[Document | None, list[str]]:
+    """准备默认知识库文档及其切片文本。"""
     path = DEFAULT_KNOWLEDGE_BASE_FILE
     if not path.exists():
         logger.warning("Default knowledge base file not found: %s", path)
-        return None
+        return None, []
 
     content = path.read_text(encoding="utf-8")
     source_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -546,7 +542,21 @@ def ensure_default_knowledge_base(admin_user_id: int, db: Session) -> Document |
         .first()
     )
     if document and document.source_hash == source_hash:
-        return document
+        has_pending_embeddings = (
+            db.query(DocumentChunk.id)
+            .filter(
+                DocumentChunk.document_id == document.id,
+                DocumentChunk.embedding.is_(None),
+            )
+            .first()
+            is not None
+        )
+        if (
+            document.status == "ready"
+            and not document.error_message
+            and not has_pending_embeddings
+        ):
+            return document, []
 
     if document is None:
         document = Document(
@@ -590,15 +600,15 @@ def ensure_default_knowledge_base(admin_user_id: int, db: Session) -> Document |
     db.flush()
     document.status = "embedding"
     db.flush()
+    return document, chunks
 
-    try:
-        _embed_chunks_sync(document.id, db)
-    except Exception as embed_err:
-        logger.warning(
-            "Default knowledge base embedding skipped: %s", embed_err
-        )
-        document.error_message = f"Embedding 失败，已保留关键词检索能力: {embed_err}"
 
+def _finalize_default_knowledge_base(
+    document: Document,
+    chunks: list[str],
+    db: Session,
+) -> Document:
+    """提交默认知识库的最终状态。"""
     document.status = "ready"
     db.commit()
     db.refresh(document)
@@ -608,6 +618,46 @@ def ensure_default_knowledge_base(admin_user_id: int, db: Session) -> Document |
         len(chunks),
     )
     return document
+
+
+def ensure_default_knowledge_base(admin_user_id: int, db: Session) -> Document | None:
+    """将 backend/Default-know-base.md 导入为系统内置知识库。
+
+    该文档对所有用户可见，可参与检索，但不可被用户删除。
+    若源文件内容发生变化，会重建切片并重新尝试 embedding。
+    """
+    document, chunks = _prepare_default_knowledge_base(admin_user_id, db)
+    if document is None or not chunks:
+        return document
+
+    try:
+        _embed_chunks_sync(document.id, db)
+    except Exception as embed_err:
+        logger.warning(
+            "Default knowledge base embedding skipped: %s", embed_err
+        )
+        document.error_message = f"Embedding 失败，已保留关键词检索能力: {embed_err}"
+
+    return _finalize_default_knowledge_base(document, chunks, db)
+
+
+async def ensure_default_knowledge_base_async(
+    admin_user_id: int, db: Session
+) -> Document | None:
+    """异步同步默认知识库，避免在已运行的事件循环中再次启动 loop。"""
+    document, chunks = _prepare_default_knowledge_base(admin_user_id, db)
+    if document is None or not chunks:
+        return document
+
+    try:
+        await _embed_chunks(document.id, db)
+    except Exception as embed_err:
+        logger.warning(
+            "Default knowledge base embedding skipped: %s", embed_err
+        )
+        document.error_message = f"Embedding 失败，已保留关键词检索能力: {embed_err}"
+
+    return _finalize_default_knowledge_base(document, chunks, db)
 
 
 def get_all_documents(

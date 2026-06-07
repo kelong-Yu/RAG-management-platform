@@ -24,17 +24,19 @@ from app.services.llm_service import (
 )
 
 # RAG 增强的 system prompt 前缀
-RAG_SYSTEM_PREFIX = """你是一个知识库问答助手。请根据以下从知识库中检索到的文档片段来回答用户的问题。
+RAG_SYSTEM_PREFIX = """你是一个严格依据知识库回答的助手。请仅根据以下从知识库中检索到的文档片段回答用户问题。
 
 要求：
-1. 优先使用提供的文档片段来回答问题
-2. 如果文档片段不足以回答问题，可以结合你的知识补充，但要明确说明哪些来自文档、哪些来自你的知识
-3. 在回答中引用具体文档时，使用 [来源: 文档名] 的格式标注
-4. 如果文档片段与问题完全无关，请忽略它们，直接基于你的知识回答
+1. 只能依据提供的文档片段回答，不要使用你自己的知识补充
+2. 如果文档片段不足以回答问题，直接回答：知识库中未检索到相关内容
+3. 回答中引用具体文档时，使用 [来源: 文档名] 的格式标注
+4. 不要编造文档中不存在的信息
 
 --- 检索到的文档片段 ---
 
 """
+
+RAG_NO_HIT_ANSWER = "知识库中未检索到相关内容。"
 
 
 async def send_message(
@@ -82,8 +84,11 @@ async def send_message(
 
     if use_rag:
         citations, rag_prefix = await _build_rag_prompt(message, user_id, db)
-        if rag_prefix:
-            history.insert(0, {"role": "system", "content": rag_prefix})
+        if not rag_prefix:
+            answer = RAG_NO_HIT_ANSWER
+            save_message(db, conv_id, "assistant", answer)
+            return answer, conv_id, citations, image_meta
+        history.insert(0, {"role": "system", "content": rag_prefix})
 
     # 6. 调用 LLM（视觉 vs 纯文本）
     if is_vision_capable() and image_paths:
@@ -142,8 +147,20 @@ async def send_message_stream(
 
     if use_rag:
         citations, rag_prefix = await _build_rag_prompt(message, user_id, db)
-        if rag_prefix:
-            history.insert(0, {"role": "system", "content": rag_prefix})
+        if not rag_prefix:
+            full_answer = RAG_NO_HIT_ANSWER
+            assistant_message = save_message(db, conv_id, "assistant", full_answer)
+            yield full_answer
+            yield f"__ASSISTANT_ID__:{assistant_message.id}"
+            if image_meta:
+                payload = {
+                    "images": image_meta,
+                    "vision_capable": is_vision_capable(),
+                }
+                yield f"__IMAGES__:{json.dumps(payload, ensure_ascii=False)}"
+            yield f"__CONV_ID__:{conv_id}"
+            return
+        history.insert(0, {"role": "system", "content": rag_prefix})
 
     # 6. 流式调用 LLM（视觉 vs 纯文本）
     full_answer = ""

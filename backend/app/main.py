@@ -16,7 +16,7 @@ from app.core.config import settings
 import app.models  # noqa: F401
 from app.db.session import Base, engine
 from app.db.session import SessionLocal
-from app.services.document_service import ensure_default_knowledge_base
+from app.services.document_service import ensure_default_knowledge_base_async
 from app.services.user_service import ensure_admin_user
 
 # ── 日志配置 ──────────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         admin = ensure_admin_user(db)
-        ensure_default_knowledge_base(admin.id, db)
+        await ensure_default_knowledge_base_async(admin.id, db)
     except Exception as e:
         logger.error("Startup seed failed: %s", e, exc_info=True)
     finally:

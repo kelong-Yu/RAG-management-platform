@@ -15,8 +15,9 @@ security_scheme = HTTPBearer()
 
 def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    db: Session = Depends(get_db),
 ) -> int:
-    """从请求头的 JWT 中解析当前用户 ID。
+    """从请求头的 JWT 中解析当前用户 ID，并校验账号仍处于启用状态。
 
     用法：作为 FastAPI 路由的依赖注入，自动从 Authorization: Bearer <token>
     中提取并验证 JWT，返回当前登录用户的数据库 ID。
@@ -34,7 +35,18 @@ def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="令牌中缺少用户标识",
         )
-    return int(user_id)
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在或认证已失效",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已被禁用",
+        )
+    return user.id
 
 
 def get_current_user(

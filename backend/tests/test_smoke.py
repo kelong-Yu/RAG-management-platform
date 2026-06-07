@@ -143,6 +143,19 @@ def test_chunk_splitting():
         assert len(chunk["content"]) > 0
 
 
+def test_semantic_chunking_keeps_markdown_boundaries():
+    """语义切片应尽量保留 Markdown 标题和段落结构。"""
+    from app.services.document_service import _semantic_chunk_text
+
+    text = "# 标题\n\n第一段内容。" * 20 + "\n\n## 子标题\n\n第二段内容。" * 20
+    chunks = _semantic_chunk_text(text, chunk_size=180, chunk_overlap=20)
+
+    assert len(chunks) > 1
+    assert any("# 标题" in chunk for chunk in chunks)
+    assert any("## 子标题" in chunk for chunk in chunks)
+    assert all(chunk.strip() for chunk in chunks)
+
+
 def test_title_generation():
     """会话标题生成应正确处理各种输入。"""
     from app.services.conversation_service import _build_conversation_title
@@ -221,11 +234,13 @@ def test_invalid_token_rejected():
 
 def test_rag_system_prefix():
     """RAG system prompt 应包含关键指令。"""
-    from app.services.chat_service import RAG_SYSTEM_PREFIX
+    from app.services.chat_service import RAG_NO_HIT_ANSWER, RAG_SYSTEM_PREFIX
 
-    assert "知识库问答助手" in RAG_SYSTEM_PREFIX
+    assert "严格依据知识库回答" in RAG_SYSTEM_PREFIX
     assert "检索到的文档片段" in RAG_SYSTEM_PREFIX
     assert "[来源:" in RAG_SYSTEM_PREFIX
+    assert "不要使用你自己的知识补充" in RAG_SYSTEM_PREFIX
+    assert RAG_NO_HIT_ANSWER == "知识库中未检索到相关内容。"
 
 
 # ── Retriever citation 测试 ────────────────────────────────────────────────
@@ -247,6 +262,38 @@ def test_citation_dataclass():
     assert c.document_name == "测试.pdf"
     assert c.page_number == 3
     assert c.similarity == 0.85
+
+
+def test_hybrid_rerank_prefers_phrase_match():
+    """混合 rerank 应提升短语命中的候选。"""
+    from app.services.retriever_service import Citation, _rerank
+
+    semantic = [
+        Citation(
+            chunk_id=1,
+            document_id=1,
+            document_name="普通文档.pdf",
+            chunk_index=0,
+            page_number=1,
+            content="这是泛泛相关内容",
+            similarity=0.6,
+        )
+    ]
+    lexical = [
+        Citation(
+            chunk_id=2,
+            document_id=2,
+            document_name="默认知识库.md",
+            chunk_index=0,
+            page_number=None,
+            content="默认知识库 支持 管理员 用户管理",
+            similarity=0.8,
+        )
+    ]
+
+    ranked = _rerank("管理员 用户管理", semantic, lexical, top_k=2)
+    assert ranked[0].chunk_id == 2
+    assert ranked[0].similarity >= ranked[1].similarity
 
 
 # ── Rate limiting 测试 ─────────────────────────────────────────────────────

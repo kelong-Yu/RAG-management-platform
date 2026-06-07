@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_user, get_current_user_id
 from app.db.session import get_db
+from app.schemas.user import AdminUserResponse
 from app.services.user_service import get_user_by_id
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -22,7 +23,10 @@ async def list_users(
     from app.models.user import User
 
     users = db.query(User).all()
-    return {"users": users, "count": len(users)}
+    return {
+        "users": [AdminUserResponse.model_validate(user) for user in users],
+        "count": len(users),
+    }
 
 
 @router.get("/db-check")

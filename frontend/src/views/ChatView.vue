@@ -32,7 +32,7 @@ const lastSentRequest = ref<{
   attachmentIds: number[]
 } | null>(null)
 const sidebarVisible = ref(true)
-const useRag = ref(localStorage.getItem(RAG_STORAGE_KEY) === 'true')
+const useRag = ref(localStorage.getItem(RAG_STORAGE_KEY) !== 'false')
 const messageCitations = ref<Record<number, Citation[]>>(
   (() => {
     const raw = localStorage.getItem(CITATIONS_STORAGE_KEY)
