@@ -26,6 +26,11 @@ DEFAULT_CHUNK_SIZE = 1000  # 每个 chunk 最多包含的字符数
 DEFAULT_CHUNK_OVERLAP = 200  # 相邻 chunk 重叠字符数
 DEFAULT_KNOWLEDGE_BASE_FILE = PROJECT_ROOT / "Default-know-base.md"
 DEFAULT_KNOWLEDGE_BASE_SOURCE = "default-knowledge-base"
+DEFAULT_KNOWLEDGE_BASE_SCHEMA_VERSION = "v2-structured-rag"
+HTML_TABLE_BLOCK_RE = re.compile(r"(?is)<html\b[\s\S]*?</html>|<table\b[\s\S]*?</table>")
+MARKDOWN_TABLE_SEPARATOR_RE = re.compile(
+    r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$"
+)
 
 
 # ── 文本提取 ───────────────────────────────────────────────────────────
@@ -159,10 +164,14 @@ def _normalize_text(text: str) -> str:
 
 def _split_semantic_units(text: str, chunk_size: int) -> list[str]:
     """将文本拆成可合并的语义单元。"""
-    blocks = [block.strip() for block in re.split(r"\n\s*\n", text) if block.strip()]
+    blocks = _split_structured_blocks(text)
     units: list[str] = []
 
     for block in blocks:
+        if _is_structured_block(block):
+            units.append(block)
+            continue
+
         if len(block) <= chunk_size:
             units.append(block)
             continue
@@ -185,6 +194,99 @@ def _split_semantic_units(text: str, chunk_size: int) -> list[str]:
         units.extend(_split_long_text(block, chunk_size))
 
     return units
+
+
+def _split_structured_blocks(text: str) -> list[str]:
+    """按段落拆分文本，同时保护 HTML/Markdown 表格块不被破坏。"""
+    blocks: list[str] = []
+    cursor = 0
+
+    for match in HTML_TABLE_BLOCK_RE.finditer(text):
+        before = text[cursor:match.start()]
+        blocks.extend(_split_plain_blocks(before))
+        html_block = match.group(0).strip()
+        if html_block:
+            blocks.append(html_block)
+        cursor = match.end()
+
+    blocks.extend(_split_plain_blocks(text[cursor:]))
+    return [block for block in blocks if block.strip()]
+
+
+def _split_plain_blocks(text: str) -> list[str]:
+    """拆分普通文本块，并将 Markdown 表格视作单独结构块。"""
+    if not text.strip():
+        return []
+
+    blocks: list[str] = []
+    current_lines: list[str] = []
+    lines = text.split("\n")
+    index = 0
+
+    def flush_current() -> None:
+        if current_lines:
+            block = "\n".join(current_lines).strip()
+            if block:
+                blocks.append(block)
+            current_lines.clear()
+
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            flush_current()
+            index += 1
+            continue
+
+        if _looks_like_markdown_table(lines, index):
+            flush_current()
+            table_lines = [lines[index].rstrip(), lines[index + 1].rstrip()]
+            index += 2
+            while index < len(lines):
+                current = lines[index]
+                if not current.strip():
+                    break
+                if "|" not in current:
+                    break
+                table_lines.append(current.rstrip())
+                index += 1
+            blocks.append("\n".join(table_lines).strip())
+            continue
+
+        current_lines.append(line.rstrip())
+        index += 1
+
+    flush_current()
+    return blocks
+
+
+def _looks_like_markdown_table(lines: list[str], index: int) -> bool:
+    """判断从当前行开始是否为 Markdown 表格。"""
+    if index + 1 >= len(lines):
+        return False
+
+    header = lines[index].strip()
+    separator = lines[index + 1].strip()
+    if "|" not in header:
+        return False
+    return bool(MARKDOWN_TABLE_SEPARATOR_RE.match(separator))
+
+
+def _is_markdown_table_block(block: str) -> bool:
+    """判断整块文本是否为 Markdown 表格。"""
+    lines = [line.strip() for line in block.split("\n") if line.strip()]
+    if len(lines) < 2:
+        return False
+    if "|" not in lines[0]:
+        return False
+    return bool(MARKDOWN_TABLE_SEPARATOR_RE.match(lines[1]))
+
+
+def _is_structured_block(block: str) -> bool:
+    """判断是否为需要整体保留的结构化块。"""
+    stripped = block.strip()
+    return bool(HTML_TABLE_BLOCK_RE.fullmatch(stripped)) or _is_markdown_table_block(
+        stripped
+    )
 
 
 def _split_long_text(text: str, chunk_size: int) -> list[str]:
@@ -534,7 +636,8 @@ def _prepare_default_knowledge_base(
         return None, []
 
     content = path.read_text(encoding="utf-8")
-    source_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    versioned_content = f"{DEFAULT_KNOWLEDGE_BASE_SCHEMA_VERSION}\n{content}"
+    source_hash = hashlib.sha256(versioned_content.encode("utf-8")).hexdigest()
 
     document = (
         db.query(Document)

@@ -64,7 +64,7 @@ def test_schemas_import():
         document_name="测试文档.pdf",
         page_number=1,
         chunk_index=0,
-        content_snippet="这是一段测试内容",
+        content="这是一段测试内容",
         similarity=0.95,
     )
     assert citation.similarity == 0.95
@@ -240,7 +240,28 @@ def test_rag_system_prefix():
     assert "检索到的文档片段" in RAG_SYSTEM_PREFIX
     assert "[来源:" in RAG_SYSTEM_PREFIX
     assert "不要使用你自己的知识补充" in RAG_SYSTEM_PREFIX
+    assert "HTML 表格" in RAG_SYSTEM_PREFIX
+    assert "LaTeX" in RAG_SYSTEM_PREFIX
     assert RAG_NO_HIT_ANSWER == "知识库中未检索到相关内容。"
+
+
+def test_semantic_chunk_text_keeps_html_table_block():
+    """语义切片应整体保留 HTML 表格块。"""
+    from app.services.document_service import _semantic_chunk_text
+
+    text = """
+# 标题
+
+表 1 儿童斑块状银屑病患者的推荐剂量
+
+<html><body><table><tr><td>体重</td><td>推荐剂量</td></tr><tr><td>< 25 kg</td><td>$75\\mathrm{mg}$</td></tr></table></body></html>
+
+补充说明：剂量可增加至 $300\\mathrm{mg}$ 。
+"""
+    chunks = _semantic_chunk_text(text, chunk_size=120)
+
+    assert any("<table>" in chunk for chunk in chunks)
+    assert any("$300\\mathrm{mg}$" in chunk for chunk in chunks)
 
 
 # ── Retriever citation 测试 ────────────────────────────────────────────────

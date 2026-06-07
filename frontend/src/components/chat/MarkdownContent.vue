@@ -7,12 +7,18 @@
  */
 import { computed } from 'vue'
 import { marked } from 'marked'
+import markedKatex from 'marked-katex-extension'
+import 'katex/dist/katex.min.css'
 
 // 配置 marked：只允许安全的渲染选项
 marked.setOptions({
   breaks: true,       // 支持 GFM 换行
   gfm: true,          // GitHub Flavored Markdown
 })
+marked.use(markedKatex({
+  throwOnError: false,
+  nonStandard: true,
+}))
 
 const props = defineProps<{
   content: string
@@ -39,7 +45,7 @@ function escapeHtml(text: string): string {
 
 <template>
   <div
-    class="markdown-content prose prose-sm max-w-none dark:prose-invert"
+    class="markdown-content prose prose-sm max-w-none dark:prose-invert overflow-x-auto"
     v-html="html"
   />
 </template>
@@ -115,7 +121,9 @@ function escapeHtml(text: string): string {
 
 .markdown-content :deep(table) {
   width: 100%;
+  display: block;
   border-collapse: collapse;
+  overflow-x: auto;
   margin: 0.75em 0;
   font-size: 0.875em;
 }
@@ -167,6 +175,14 @@ function escapeHtml(text: string): string {
 
 .dark .markdown-content :deep(a) {
   color: rgb(96 165 250);
+}
+
+/* ── KaTeX ─────────────────────────────────────────────────────────── */
+
+.markdown-content :deep(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
 }
 
 /* ── 分割线 ────────────────────────────────────────────────────────── */

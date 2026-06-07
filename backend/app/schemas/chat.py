@@ -42,7 +42,7 @@ class CitationSchema(BaseModel):
     document_name: str
     page_number: int | None
     chunk_index: int
-    content_snippet: str  # 截取前 200 字符
+    content: str
     similarity: float
 
 

@@ -31,6 +31,9 @@ RAG_SYSTEM_PREFIX = """你是一个严格依据知识库回答的助手。请仅
 2. 如果文档片段不足以回答问题，直接回答：知识库中未检索到相关内容
 3. 回答中引用具体文档时，使用 [来源: 文档名] 的格式标注
 4. 不要编造文档中不存在的信息
+5. 如果文档片段中包含 HTML 表格（如 <table>、<tr>、<td>），优先原样保留并输出完整表格，不要改写成普通段落
+6. 如果文档片段中包含 LaTeX 公式或剂量写法（如 $150\\mathrm{mg}$、$300\\mathrm{mg}$），必须原样保留，不要删掉美元符、反斜杠或公式命令
+7. 涉及规格、剂量、表格数据时，优先直接引用原文结构化内容，再补充必要说明
 
 --- 检索到的文档片段 ---
 
@@ -278,7 +281,7 @@ async def _build_rag_prompt(
             "document_name": c.document_name,
             "page_number": c.page_number,
             "chunk_index": c.chunk_index,
-            "content_snippet": c.content[:200],
+            "content": c.content,
             "similarity": c.similarity,
         })
 

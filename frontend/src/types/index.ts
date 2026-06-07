@@ -95,7 +95,7 @@ export interface Citation {
   document_name: string
   page_number: number | null
   chunk_index: number
-  content_snippet: string
+  content: string
   similarity: number
 }
 

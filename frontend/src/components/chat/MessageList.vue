@@ -169,9 +169,9 @@ function toggleCitations(messageId: number) {
                     相关度 {{ (citation.similarity * 100).toFixed(0) }}%
                   </span>
                 </div>
-                <p class="text-gray-600 dark:text-gray-400 leading-relaxed">
-                  {{ citation.content_snippet }}
-                </p>
+                <div class="rounded bg-white/70 dark:bg-gray-900/20 px-3 py-2">
+                  <MarkdownContent :content="citation.content || ''" />
+                </div>
               </div>
             </div>
           </div>
