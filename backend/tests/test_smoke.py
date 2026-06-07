@@ -264,6 +264,28 @@ def test_semantic_chunk_text_keeps_html_table_block():
     assert any("$300\\mathrm{mg}$" in chunk for chunk in chunks)
 
 
+def test_merge_answer_with_structured_citations_appends_raw_block():
+    """结构化命中内容应直接并入主回答正文。"""
+    from app.services.chat_service import _merge_answer_with_structured_citations
+
+    answer = "根据知识库，银屑病成人患者常用推荐剂量为每次 $300\\mathrm{mg}$。"
+    citations = [
+        {
+            "document_name": "Default-know-base.md",
+            "page_number": None,
+            "chunk_index": 2,
+            "content": "<table><tr><td>剂量</td><td>$300\\mathrm{mg}$</td></tr></table>",
+            "similarity": 0.91,
+        }
+    ]
+
+    merged = _merge_answer_with_structured_citations(answer, "银屑病推荐剂量是多少", citations)
+
+    assert "以下为知识库中直接命中的原始内容" in merged
+    assert "<table>" in merged
+    assert "$300\\mathrm{mg}$" in merged
+
+
 # ── Retriever citation 测试 ────────────────────────────────────────────────
 
 

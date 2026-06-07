@@ -3,6 +3,7 @@
 """
 
 import json
+import re
 from collections.abc import AsyncGenerator, Sequence
 
 from sqlalchemy.orm import Session
@@ -40,6 +41,21 @@ RAG_SYSTEM_PREFIX = """你是一个严格依据知识库回答的助手。请仅
 """
 
 RAG_NO_HIT_ANSWER = "知识库中未检索到相关内容。"
+STRUCTURED_QUERY_TERMS = (
+    "剂量",
+    "用法",
+    "用量",
+    "规格",
+    "给药",
+    "治疗",
+    "方案",
+    "表",
+    "数据",
+    "疗效",
+    "mg",
+    "pasi",
+    "trtd",
+)
 
 
 async def send_message(
@@ -98,6 +114,8 @@ async def send_message(
         answer = await chat_with_multimodal_context(history, image_paths)
     else:
         answer = await chat_with_context(history)
+
+    answer = _merge_answer_with_structured_citations(answer, message, citations)
 
     # 7. 保存助手消息
     save_message(db, conv_id, "assistant", answer)
@@ -175,6 +193,12 @@ async def send_message_stream(
         async for token in chat_stream_with_context(history):
             full_answer += token
             yield token
+
+    appendix = _build_structured_citation_appendix(message, citations)
+    if appendix:
+        suffix = f"\n\n---\n\n{appendix}"
+        full_answer += suffix
+        yield suffix
 
     # 7. 流结束后保存助手消息
     assistant_message = save_message(db, conv_id, "assistant", full_answer)
@@ -295,3 +319,74 @@ async def _build_rag_prompt(
 
     rag_prefix = RAG_SYSTEM_PREFIX + "\n\n---\n\n".join(context_parts)
     return citations, rag_prefix
+
+
+def _citation_has_structured_content(citation: dict) -> bool:
+    """判断引用是否包含应直接展示给用户的结构化内容。"""
+    content = citation.get("content", "")
+    if not content:
+        return False
+
+    lowered = content.lower()
+    if "<table" in lowered or "<tr" in lowered or "<td" in lowered:
+        return True
+    if "\\mathrm" in content or "\\frac" in content or "\\times" in content:
+        return True
+    if re.search(r"\$[^$\n]+\$", content):
+        return True
+    if re.search(r"^\s*\|.+\|\s*$", content, flags=re.MULTILINE):
+        return True
+    return False
+
+
+def _query_prefers_structured_answer(query: str) -> bool:
+    """判断用户问题是否更适合直接展示结构化原文。"""
+    normalized = query.lower()
+    return any(term in normalized for term in STRUCTURED_QUERY_TERMS)
+
+
+def _build_structured_citation_appendix(
+    query: str,
+    citations: list[dict],
+) -> str:
+    """根据结构化引用构造应直接展示在主回答中的原文片段。"""
+    if not citations:
+        return ""
+
+    structured = [c for c in citations if _citation_has_structured_content(c)]
+    if not structured:
+        return ""
+
+    if not _query_prefers_structured_answer(query):
+        return ""
+
+    blocks: list[str] = [
+        "以下为知识库中直接命中的原始内容，请优先以这些表格和公式为准："
+    ]
+
+    for citation in structured[:2]:
+        page_info = (
+            f"第{citation['page_number']}页" if citation.get("page_number") else "未知页码"
+        )
+        blocks.append(
+            f"[来源: {citation['document_name']}] ({page_info}, 片段 {citation['chunk_index']})"
+        )
+        blocks.append(citation.get("content", "").strip())
+
+    return "\n\n".join(block for block in blocks if block)
+
+
+def _merge_answer_with_structured_citations(
+    answer: str,
+    query: str,
+    citations: list[dict],
+) -> str:
+    """将结构化命中内容直接并入主回答正文。"""
+    appendix = _build_structured_citation_appendix(query, citations)
+    if not appendix:
+        return answer
+
+    existing = answer or ""
+    if appendix in existing:
+        return existing
+    return f"{existing.rstrip()}\n\n---\n\n{appendix}".strip()
