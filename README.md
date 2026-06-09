@@ -1,6 +1,6 @@
-# AI Chat
+# 智能知识库管理平台
 
-一个基于 `Vue 3 + Vite + TypeScript + FastAPI + PostgreSQL + JWT` 的全栈 AI 聊天应用，支持会话管理、知识库 RAG、默认知识库、混合检索、图片附件和管理员能力。
+一个基于 `Vue 3 + Vite + TypeScript + FastAPI + PostgreSQL + JWT` 的全栈 AI 知识库管理平台，支持会话管理、知识库 RAG、默认知识库、混合检索、图片附件和管理员能力。
 
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
 ![Vite](https://img.shields.io/badge/Vite-8-646cff)
@@ -41,21 +41,15 @@
 
 ## 项目截图
 
-当前仓库没有提交正式截图资源。为了方便你上传 GitHub，我已经按展示型 README 的写法预留了截图位置，建议把实际截图放到 `docs/images/` 目录后再把下面路径替换成真实图片。
-
-建议准备这 4 张图：
-
-- `docs/images/chat-home.png`：聊天主界面
-- `docs/images/rag-citation.png`：知识库问答与引用来源
-- `docs/images/knowledge-base.png`：知识库页面
-- `docs/images/admin-panel.png`：管理员控制台
-
-建议截图内容：
-
-- 聊天页：流式回答、知识库模式、引用来源
-- RAG：命中表格/公式后的正文展示效果
-- 知识库页：文档状态、切片数量、详情抽屉
-- 管理员页：用户管理、默认知识库同步按钮
+知识库检索
+<img width="2559" height="1347" alt="image" src="https://github.com/user-attachments/assets/2efb5d3a-92d7-409f-9bb2-56c05f391122" />
+命中参考来源
+<img width="2247" height="3005" alt="image" src="https://github.com/user-attachments/assets/109ec0b4-61f0-4a83-8c74-59cf3304036d" />
+知识库文档切片展示
+<img width="2256" height="1332" alt="image" src="https://github.com/user-attachments/assets/b783d008-447d-44ff-b7a0-fc3a96b6dda2" />
+除此之外，用户可上传自己的文档并创建知识库，管理员可对用户和文档进行统一管理
+<img width="2223" height="1071" alt="image" src="https://github.com/user-attachments/assets/dfa56fb1-dd19-41a0-ba7b-5d013bc87536" />
+<img width="2130" height="1257" alt="image" src="https://github.com/user-attachments/assets/0c259ab3-2cc0-4bd3-9c81-6f0031b99a62" />
 
 ## 功能演示
 
