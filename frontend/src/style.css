@@ -17,3 +17,6 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+.el-table .cell {
+  text-align: center;
+}

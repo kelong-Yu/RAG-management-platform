@@ -170,11 +170,11 @@ onMounted(() => {
         <span class="text-sm text-gray-500">共 {{ users.length }} 个用户</span>
       </div>
 
-      <el-table v-loading="loading" :data="users" border>
+      <el-table v-loading="loading" :data="users" border >
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="email" label="邮箱" min-width="220" />
-        <el-table-column label="角色" width="150">
+        <el-table-column label="角色" width="150" >
           <template #default="{ row }">
             <el-select
               v-model="row.role"
@@ -186,7 +186,7 @@ onMounted(() => {
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column label="状态" width="110" >
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small">
               {{ row.is_active ? '启用' : '禁用' }}
@@ -198,9 +198,9 @@ onMounted(() => {
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="210" >
           <template #default="{ row }">
-            <div class="flex items-center gap-2">
+            <div >
               <el-button size="small" @click="handleToggleActive(row)">
                 {{ row.is_active ? '禁用' : '启用' }}
               </el-button>

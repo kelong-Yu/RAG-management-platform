@@ -24,7 +24,7 @@ const emit = defineEmits<{
       </el-button>
     </div>
 
-    <div class="text-sm text-gray-600 dark:text-gray-400 truncate text-center font-medium mr-22">
+    <div class="text-sm text-gray-600 dark:text-gray-400 truncate text-center font-medium mr-4">
       {{ currentConversationTitle }}
     </div>
 
